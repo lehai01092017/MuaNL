@@ -47,7 +47,7 @@ class Db private constructor(ctx: Context) :
 
     companion object {
         const val DB_NAME = "nguyenlieu.db"
-        const val DB_VERSION = 4
+        const val DB_VERSION = 5
         @Volatile private var instance: Db? = null
         fun get(ctx: Context): Db =
             instance ?: synchronized(this) { instance ?: Db(ctx).also { instance = it } }
@@ -110,7 +110,30 @@ class Db private constructor(ctx: Context) :
             db.execSQL("ALTER TABLE items ADD COLUMN photo_ver INTEGER NOT NULL DEFAULT 0")
         }
         if (oldVersion < 4) replaceOldSamples(db)
+        if (oldVersion < 5) renameCatalog(db)
     }
+
+    /** Bản 5: cập nhật tên/đơn vị/giá hàng hoá theo bảng giá mới (8/11/2026). */
+    private fun renameCatalog(db: SQLiteDatabase) {
+        val changes = listOf(
+            // tên cũ -> (tên mới, đơn vị, giá)
+            "Nha đam 3Q" to Triple("Nha đam 3Q 1Kg", "Gói", 50000L),
+            "Rich base" to Triple("Rick base", "Hộp", 55000L),
+            "Rich lùn" to Triple("Rick lùn", "Hộp", 32000L),
+            "Siro đường đen Syrup 2.5kg" to Triple("Siro đường đen Tuấn Cường Phát 2.5kg", "Chai", 130000L),
+            "Trà đen phúc long" to Triple("Trà đen phúc long 500g", "Gói", 125000L),
+            "Trân châu Kun han" to Triple("Trân châu Kun han 3Kg", "Gói", 90000L),
+            "Vụn dừa" to Triple("Vụn dừa 500g", "Gói", 70000L),
+            "Trà lài VINSAF" to Triple("Trà lài VINSAF 1Kg", "Gói", 240000L),
+        )
+        for ((old, new) in changes) {
+            val (name, unit, price) = new
+            val taken = db.rawQuery("SELECT 1 FROM items WHERE name=? COLLATE NOCASE", arrayOf(name)).use { it.moveToFirst() }
+            if (taken) continue
+            db.update("items", ContentValues().apply {
+                put("name", name); put("unit", unit); put("price", price)
+            }, "name=? COLLATE NOCASE", arrayOf(old))
+        }
 
     /**
      * Bản 4: xoá danh mục & hàng mẫu cũ (Rau củ, Thịt cá, Gia vị) rồi nạp danh mục đồ uống.
@@ -136,23 +159,23 @@ class Db private constructor(ctx: Context) :
     private fun seed(db: SQLiteDatabase) {
         val sample = linkedMapOf(
             "Cà phê & Trà" to listOf(
-                Triple("Cafe bột", "kg", 369000L), Triple("Trà đen phúc long", "Gói", 125000L),
-                Triple("Trà lài VINSAF", "Kg", 240000L),
+                Triple("Cafe bột", "kg", 369000L), Triple("Trà đen phúc long 500g", "Gói", 125000L),
+                Triple("Trà lài VINSAF 1Kg", "Gói", 240000L),
             ),
             "Siro" to listOf(
                 Triple("Siro chanh xanh TE 2.5Kg", "Chai", 200000L), Triple("Siro đào berrino", "Chai", 160000L),
                 Triple("Siro dâu tây berrino", "Chai", 85000L), Triple("Siro Việt quất berrino", "Chai", 115000L),
                 Triple("Siro Xoài berrino", "Chai", 100000L), Triple("Siro Vải berrino", "Chai", 140000L),
-                Triple("Siro đường đen Syrup 2.5kg", "Chai", 130000L),
+                Triple("Siro đường đen Tuấn Cường Phát 2.5kg", "Chai", 130000L),
             ),
             "Sữa & Kem" to listOf(
-                Triple("Bột kem trứng cô gái Xiaka", "Gói", 165000L), Triple("Rich base", "Hộp", 55000L),
-                Triple("Rich lùn", "Hộp", 32000L), Triple("Sữa đặc ngôi sao xanh lá", "Hộp", 65000L),
+                Triple("Bột kem trứng cô gái Xiaka", "Gói", 165000L), Triple("Rick base", "Hộp", 55000L),
+                Triple("Rick lùn", "Hộp", 32000L), Triple("Sữa đặc ngôi sao xanh lá", "Hộp", 65000L),
                 Triple("Sữa tươi Mlekovita", "Hộp", 35000L),
             ),
             "Topping" to listOf(
-                Triple("Nha đam 3Q", "Gói", 50000L), Triple("Trân châu Kun han", "Gói", 90000L),
-                Triple("Xí muội không hạt", "200g", 30000L), Triple("Vụn dừa", "500g", 70000L),
+                Triple("Nha đam 3Q 1Kg", "Gói", 50000L), Triple("Trân châu Kun han 3Kg", "Gói", 90000L),
+                Triple("Xí muội không hạt", "200g", 30000L), Triple("Vụn dừa 500g", "Gói", 70000L),
             ),
         )
         var sort = db.rawQuery("SELECT COALESCE(MAX(sort),0)+1 FROM categories", null)
