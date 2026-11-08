@@ -10,7 +10,17 @@ import java.text.Normalizer
 import java.util.zip.ZipInputStream
 import kotlin.math.roundToLong
 
-data class CatalogRow(val name: String, val unit: String, val price: Long, val category: String?)
+data class CatalogRow(
+    val name: String,
+    val unit: String,
+    val price: Long,
+    val category: String?,
+    /** Ảnh sản phẩm chèn trong Excel (đã thu nhỏ, JPEG), null nếu dòng không có ảnh. */
+    val photo: ByteArray? = null,
+)
+
+/** Kết quả đọc trang tính: các dòng (số dòng 0-based -> ô) và ô ảnh-trong-ô (số dòng -> chỉ số vm). */
+private class SheetCells(val rows: List<Pair<Int, Map<Int, String>>>, val vm: Map<Int, Int>)
 
 data class CatalogResult(val added: Int, val updated: Int, val newCategories: Int)
 
@@ -34,7 +44,128 @@ object ExcelImport {
         val shared = files["xl/sharedStrings.xml"]?.let { sharedStrings(it) } ?: emptyList()
         val sheetPath = firstSheetPath(files)
         val sheet = files[sheetPath] ?: throw IllegalArgumentException("Không tìm thấy trang tính")
-        return toRows(cells(sheet, shared))
+        val parsed = cells(sheet, shared)
+        val images = HashMap<Int, ByteArray>()
+        try { images.putAll(anchoredImages(files, sheetPath)) } catch (_: Exception) {}
+        try { inCellImages(files, parsed.vm).forEach { (r, b) -> images.putIfAbsent(r, b) } } catch (_: Exception) {}
+        return toRows(parsed.rows, images)
+    }
+
+    // ---------- Ảnh trong Excel ----------
+    /** "xl/worksheets/sheet1.xml" -> "xl/worksheets/_rels/sheet1.xml.rels" */
+    private fun relsPathOf(part: String) =
+        part.substringBeforeLast('/') + "/_rels/" + part.substringAfterLast('/') + ".rels"
+
+    /** Ghép đường dẫn tương đối ("../media/image1.png") theo file gốc. */
+    private fun resolve(base: String, target: String): String {
+        if (target.startsWith("/")) return target.removePrefix("/")
+        val parts = base.split("/").dropLast(1).toMutableList()
+        for (seg in target.split("/")) when (seg) {
+            ".." -> if (parts.isNotEmpty()) parts.removeAt(parts.size - 1)
+            ".", "" -> {}
+            else -> parts += seg
+        }
+        return parts.joinToString("/")
+    }
+
+    private fun rels(files: Map<String, ByteArray>, path: String): Map<String, String> {
+        val out = HashMap<String, String>()
+        val bytes = files[path] ?: return out
+        val p = parser(bytes)
+        while (p.next() != XmlPullParser.END_DOCUMENT) {
+            if (p.eventType == XmlPullParser.START_TAG && p.name == "Relationship") {
+                out[p.getAttributeValue(null, "Id")] = p.getAttributeValue(null, "Target")
+            }
+        }
+        return out
+    }
+
+    private fun attrEndingWith(p: XmlPullParser, suffix: String): String? {
+        for (i in 0 until p.attributeCount) {
+            val n = p.getAttributeName(i)
+            if (n == suffix || n.endsWith(":$suffix")) return p.getAttributeValue(i)
+        }
+        return null
+    }
+
+    /** Ảnh "đặt trên ô" (Insert > Picture): lấy theo dòng của góc trên-trái ảnh. */
+    private fun anchoredImages(files: Map<String, ByteArray>, sheetPath: String): Map<Int, ByteArray> {
+        val out = HashMap<Int, ByteArray>()
+        for (target in rels(files, relsPathOf(sheetPath)).values) {
+            if (!target.contains("drawings/")) continue
+            val drawPath = resolve(sheetPath, target)
+            val bytes = files[drawPath] ?: continue
+            val drawRels = rels(files, relsPathOf(drawPath))
+            val p = parser(bytes)
+            var row = -1; var embed: String? = null
+            var inFrom = false; var inRow = false
+            val sb = StringBuilder()
+            while (p.next() != XmlPullParser.END_DOCUMENT) {
+                val local = p.name?.substringAfter(':')
+                when (p.eventType) {
+                    XmlPullParser.START_TAG -> when (local) {
+                        "twoCellAnchor", "oneCellAnchor", "absoluteAnchor" -> { row = -1; embed = null }
+                        "from" -> inFrom = true
+                        "row" -> if (inFrom) { inRow = true; sb.setLength(0) }
+                        "blip" -> if (embed == null) embed = attrEndingWith(p, "embed")
+                    }
+                    XmlPullParser.TEXT -> if (inRow) sb.append(p.text)
+                    XmlPullParser.END_TAG -> when (local) {
+                        "row" -> if (inRow) { inRow = false; row = sb.toString().trim().toIntOrNull() ?: -1 }
+                        "from" -> inFrom = false
+                        "twoCellAnchor", "oneCellAnchor", "absoluteAnchor" -> {
+                            val img = embed?.let { drawRels[it] }?.let { files[resolve(drawPath, it)] }
+                            if (row >= 0 && img != null) out.putIfAbsent(row, img)
+                        }
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    /** Ảnh "đặt trong ô" (Excel 365: Place in Cell): ô có thuộc tính vm trỏ tới richData. */
+    private fun inCellImages(files: Map<String, ByteArray>, vm: Map<Int, Int>): Map<Int, ByteArray> {
+        if (vm.isEmpty()) return emptyMap()
+        val rvBytes = files["xl/richData/rdrichvalue.xml"] ?: return emptyMap()
+        // Mỗi <rv> có <v> đầu tiên = chỉ số trong richValueRel
+        val rvRel = ArrayList<Int>()
+        run {
+            val p = parser(rvBytes)
+            var inRv = false; var first = true; var inV = false
+            val sb = StringBuilder()
+            while (p.next() != XmlPullParser.END_DOCUMENT) {
+                when (p.eventType) {
+                    XmlPullParser.START_TAG -> when (p.name) {
+                        "rv" -> { inRv = true; first = true }
+                        "v" -> if (inRv && first) { inV = true; sb.setLength(0) }
+                    }
+                    XmlPullParser.TEXT -> if (inV) sb.append(p.text)
+                    XmlPullParser.END_TAG -> when (p.name) {
+                        "v" -> if (inV) { inV = false; first = false; rvRel += sb.toString().trim().toIntOrNull() ?: -1 }
+                        "rv" -> { if (first) rvRel += -1; inRv = false }
+                    }
+                }
+            }
+        }
+        val relPath = "xl/richData/richValueRel.xml"
+        val relIds = ArrayList<String>()
+        files[relPath]?.let { bytes ->
+            val p = parser(bytes)
+            while (p.next() != XmlPullParser.END_DOCUMENT) {
+                if (p.eventType == XmlPullParser.START_TAG && p.name.substringAfter(':') == "rel") {
+                    relIds += attrEndingWith(p, "id") ?: ""
+                }
+            }
+        } ?: return emptyMap()
+        val relTargets = rels(files, relsPathOf(relPath))
+        val out = HashMap<Int, ByteArray>()
+        for ((row, v) in vm) {
+            val relIdx = rvRel.getOrNull(v - 1) ?: continue
+            val target = relTargets[relIds.getOrNull(relIdx) ?: continue] ?: continue
+            files[resolve(relPath, target)]?.let { out[row] = it }
+        }
+        return out
     }
 
     // ---------- Phân tích XML ----------
@@ -103,8 +234,10 @@ object ExcelImport {
     }
 
     /** Trả về danh sách dòng, mỗi dòng là map cột(0-based) -> giá trị chuỗi. */
-    private fun cells(bytes: ByteArray, shared: List<String>): List<Map<Int, String>> {
-        val rows = ArrayList<Map<Int, String>>()
+    private fun cells(bytes: ByteArray, shared: List<String>): SheetCells {
+        val rows = ArrayList<Pair<Int, Map<Int, String>>>()
+        val vms = HashMap<Int, Int>()
+        var rowIdx = -1
         val p = parser(bytes)
         var row: HashMap<Int, String>? = null
         var col = 0; var type = ""; var nextCol = 0
@@ -113,12 +246,16 @@ object ExcelImport {
         while (p.next() != XmlPullParser.END_DOCUMENT) {
             when (p.eventType) {
                 XmlPullParser.START_TAG -> when (p.name) {
-                    "row" -> { row = HashMap(); nextCol = 0 }
+                    "row" -> {
+                        row = HashMap(); nextCol = 0
+                        rowIdx = p.getAttributeValue(null, "r")?.toIntOrNull()?.minus(1) ?: (rowIdx + 1)
+                    }
                     "c" -> {
                         val ref = p.getAttributeValue(null, "r")
                         col = if (ref != null) colIndex(ref) else nextCol
                         nextCol = col + 1
                         type = p.getAttributeValue(null, "t") ?: ""
+                        p.getAttributeValue(null, "vm")?.toIntOrNull()?.let { vms.putIfAbsent(rowIdx, it) }
                         sb.setLength(0)
                     }
                     "v", "t" -> inValue = true
@@ -131,11 +268,11 @@ object ExcelImport {
                         val value = if (type == "s") raw.trim().toIntOrNull()?.let { shared.getOrNull(it) } ?: "" else raw
                         if (value.isNotBlank()) row?.put(col, value.trim())
                     }
-                    "row" -> row?.let { rows += it }
+                    "row" -> row?.let { rows += rowIdx to it }
                 }
             }
         }
-        return rows
+        return SheetCells(rows, vms)
     }
 
     private fun colIndex(ref: String): Int {
@@ -149,10 +286,11 @@ object ExcelImport {
         Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD)
             .replace(Regex("\\p{Mn}+"), "").replace('đ', 'd').trim()
 
-    private fun toRows(rows: List<Map<Int, String>>): List<CatalogRow> {
+    private fun toRows(rows: List<Pair<Int, Map<Int, String>>>, images: Map<Int, ByteArray>): List<CatalogRow> {
         var nameCol = -1; var unitCol = -1; var priceCol = -1; var catCol = -1
         var start = -1
-        for ((i, r) in rows.withIndex()) {
+        for ((i, pair) in rows.withIndex()) {
+            val r = pair.second
             var n = -1; var u = -1; var pr = -1; var c = -1
             for ((col, v) in r) {
                 val t = norm(v)
@@ -169,7 +307,7 @@ object ExcelImport {
         require(start >= 0) { "Không thấy dòng tiêu đề có cột \"Hàng hóa\" và \"Đơn giá\"" }
 
         val out = ArrayList<CatalogRow>()
-        for (r in rows.drop(start)) {
+        for ((rowIdx, r) in rows.drop(start)) {
             val name = r[nameCol]?.trim().orEmpty()
             if (name.isEmpty()) continue
             val n = norm(name)
@@ -179,6 +317,7 @@ object ExcelImport {
                 unit = if (unitCol >= 0) r[unitCol].orEmpty() else "",
                 price = parsePrice(r[priceCol].orEmpty()),
                 category = if (catCol >= 0) r[catCol]?.takeIf { it.isNotBlank() } else null,
+                photo = images[rowIdx]?.let { Photos.fromBytes(it) },
             )
         }
         require(out.isNotEmpty()) { "Không có mặt hàng nào bên dưới dòng tiêu đề" }
@@ -213,6 +352,7 @@ fun Db.importCatalog(rows: List<CatalogRow>): CatalogResult {
                 .use { if (it.moveToFirst()) it.getLong(0) else null }
             val v = ContentValues().apply {
                 put("name", r.name); put("unit", r.unit); put("price", r.price)
+                if (r.photo != null) { put("photo", r.photo); put("photo_ver", System.currentTimeMillis()) }
             }
             if (existing != null) {
                 if (r.category != null) v.put("category_id", categoryId(r.category))

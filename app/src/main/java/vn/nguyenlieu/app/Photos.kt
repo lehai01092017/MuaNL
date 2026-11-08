@@ -87,6 +87,22 @@ object Photos {
         }
     }
 
+    /** Ảnh lấy từ file Excel: thu nhỏ và nén lại như ảnh chụp. Định dạng không đọc được (EMF…) -> null. */
+    fun fromBytes(bytes: ByteArray): ByteArray? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0) null else {
+            var sample = 1
+            while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2
+            var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            val scale = MAX_SIDE.toFloat() / max(bmp.width, bmp.height)
+            if (scale < 1f) bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+            ByteArrayOutputStream().use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, 82, out); out.toByteArray() }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     fun decode(bytes: ByteArray): ImageBitmap? =
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 
