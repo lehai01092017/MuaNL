@@ -117,6 +117,32 @@ object BillShare {
         return FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
     }
 
+    /** Gửi ảnh bill + file đơn hàng (.json) cùng lúc, để máy nhận thêm được đơn. */
+    fun shareImageAndFile(ctx: Context, bill: Bill, lines: List<BillLine>, pkg: String? = null) {
+        val img = saveImage(ctx, bill, lines)
+        val file = BillFile.write(ctx, bill, lines)
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(img, file))
+            clipData = ClipData.newRawUri("bill", img).apply { addItem(ClipData.Item(file)) }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        launch(ctx, intent, pkg)
+    }
+
+    /** Chỉ gửi file đơn hàng. */
+    fun shareBillFile(ctx: Context, bill: Bill, lines: List<BillLine>, pkg: String? = null) {
+        File(ctx.cacheDir, "bills").listFiles()?.forEach { it.delete() }
+        val file = BillFile.write(ctx, bill, lines)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, file)
+            clipData = ClipData.newRawUri("bill", file)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        launch(ctx, intent, pkg)
+    }
+
     /** Chia sẻ dạng ảnh. pkg = ZALO để mở thẳng Zalo, null để chọn ứng dụng. */
     fun shareImage(ctx: Context, bill: Bill, lines: List<BillLine>, pkg: String? = null) {
         val uri = saveImage(ctx, bill, lines)

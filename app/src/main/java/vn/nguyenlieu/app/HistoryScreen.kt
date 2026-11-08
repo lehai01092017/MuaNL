@@ -108,16 +108,24 @@ fun BillDialog(state: AppState, billId: Long, onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.height(16.dp))
                 Button(
-                    onClick = { BillShare.shareImage(ctx, bill, lines, BillShare.ZALO) },
+                    onClick = { BillShare.shareImageAndFile(ctx, bill, lines, BillShare.ZALO) },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0068FF)),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Gửi ảnh bill qua Zalo") }
+                ) { Text("Gửi Zalo: ảnh bill + file đơn") }
+                Text(
+                    "File đơn (.json) giúp máy nhận bấm mở bằng Mua NL để thêm đơn này vào lịch sử.",
+                    fontSize = 12.sp, color = Color.Gray
+                )
+                Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(onClick = { BillShare.shareImage(ctx, bill, lines) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Share, null); Spacer(Modifier.width(4.dp)); Text("Ảnh")
+                        Text("Ảnh")
                     }
                     OutlinedButton(onClick = { BillShare.shareText(ctx, bill, lines) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Share, null); Spacer(Modifier.width(4.dp)); Text("Văn bản")
+                        Text("Chữ")
+                    }
+                    OutlinedButton(onClick = { BillShare.shareBillFile(ctx, bill, lines) }, modifier = Modifier.weight(1f)) {
+                        Text("File đơn")
                     }
                 }
             }

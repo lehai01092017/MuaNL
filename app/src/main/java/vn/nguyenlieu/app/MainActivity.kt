@@ -2,7 +2,12 @@
 
 package vn.nguyenlieu.app
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -44,8 +49,28 @@ import androidx.compose.ui.unit.dp
 val Green = Color(0xFF2E7D32)
 
 class MainActivity : ComponentActivity() {
+    /** File được mở/chia sẻ vào app (đơn hàng .json hoặc dữ liệu .db). */
+    private val incomingUri = mutableStateOf<Uri?>(null)
+
+    private fun handle(intent: Intent?) {
+        val uri: Uri? = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= 33)
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            else @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            else -> null
+        }
+        if (uri != null) incomingUri.value = uri
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) handle(intent)
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
@@ -54,7 +79,7 @@ class MainActivity : ComponentActivity() {
                     primaryContainer = Color(0xFFC8E6C9),
                     secondaryContainer = Color(0xFFDCEDC8),
                 )
-            ) { App() }
+            ) { App(incomingUri.value) { incomingUri.value = null } }
         }
     }
 }
@@ -77,12 +102,23 @@ private enum class Tab(val title: String, val icon: ImageVector) {
 }
 
 @Composable
-fun App() {
+fun App(incomingUri: Uri? = null, onIncomingHandled: () -> Unit = {}) {
     val ctx = LocalContext.current
     val state = remember { AppState(Db.get(ctx)) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var needName by remember { mutableStateOf(Prefs.creator(ctx).isBlank()) }
+    var incoming by remember { mutableStateOf<Incoming?>(null) }
+    LaunchedEffect(incomingUri) {
+        if (incomingUri != null) {
+            try {
+                incoming = IncomingFile.classify(ctx, incomingUri)
+            } catch (e: Exception) {
+                Toast.makeText(ctx, e.message ?: "File không hợp lệ", Toast.LENGTH_LONG).show()
+            }
+            onIncomingHandled()
+        }
+    }
     val current = Tab.entries[tab]
 
     Scaffold(
@@ -136,6 +172,7 @@ fun App() {
         }
     }
     if (showSettings) SettingsDialog(state, onDismiss = { showSettings = false })
+    if (!needName) incoming?.let { IncomingDialog(state, it) { incoming = null; tab = 2 } }
     if (needName) FirstRunDialog { name -> Prefs.setCreator(ctx, name); needName = false }
 }
 
