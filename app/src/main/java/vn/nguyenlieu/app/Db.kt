@@ -47,7 +47,7 @@ class Db private constructor(ctx: Context) :
 
     companion object {
         const val DB_NAME = "nguyenlieu.db"
-        const val DB_VERSION = 5
+        const val DB_VERSION = 6
         @Volatile private var instance: Db? = null
         fun get(ctx: Context): Db =
             instance ?: synchronized(this) { instance ?: Db(ctx).also { instance = it } }
@@ -111,6 +111,7 @@ class Db private constructor(ctx: Context) :
         }
         if (oldVersion < 4) replaceOldSamples(db)
         if (oldVersion < 5) renameCatalog(db)
+        if (oldVersion < 6) { renameCatalog(db); seed(db) } // cập nhật giá + đơn vị theo bảng giá mới
     }
 
     /** Bản 5: cập nhật tên/đơn vị/giá hàng hoá theo bảng giá mới (8/11/2026). */
@@ -156,7 +157,7 @@ class Db private constructor(ctx: Context) :
         seed(db)
     }
 
-    /** Dữ liệu mẫu cho lần chạy đầu tiên. */
+    /** Bảng giá hàng hoá: lần đầu thì tạo mới; khi nâng cấp thì thêm hàng thiếu và cập nhật giá. */
     private fun seed(db: SQLiteDatabase) {
         val sample = linkedMapOf(
             "Cà phê & Trà" to listOf(
@@ -186,9 +187,10 @@ class Db private constructor(ctx: Context) :
                 .use { if (it.moveToFirst()) it.getLong(0) else null }
                 ?: db.insert("categories", null, ContentValues().apply { put("name", cat); put("sort", sort++) })
             for ((n, u, p) in items) {
-                val exists = db.rawQuery("SELECT 1 FROM items WHERE name=? COLLATE NOCASE", arrayOf(n))
-                    .use { it.moveToFirst() }
-                if (exists) continue
+                // Đã có hàng cùng tên -> cập nhật đơn vị và đơn giá theo bảng giá
+                val updated = db.update("items", ContentValues().apply { put("unit", u); put("price", p) },
+                    "name=? COLLATE NOCASE", arrayOf(n))
+                if (updated > 0) continue
                 db.insert("items", null, ContentValues().apply {
                     put("category_id", cid); put("name", n); put("unit", u); put("price", p)
                 })
