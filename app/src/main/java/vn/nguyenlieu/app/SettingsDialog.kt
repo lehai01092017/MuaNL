@@ -33,7 +33,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.io.File
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 @Composable
 fun SettingsDialog(state: AppState, onDismiss: () -> Unit) {
@@ -51,11 +52,28 @@ fun SettingsDialog(state: AppState, onDismiss: () -> Unit) {
         }
     }
 
+    val excelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                val rows = ExcelImport.read(ctx, uri)
+                val r = state.db.importCatalog(rows)
+                Toast.makeText(
+                    ctx, "Đã nhập ${rows.size} dòng: thêm ${r.added}, cập nhật ${r.updated}" +
+                        (if (r.newCategories > 0) ", tạo ${r.newCategories} danh mục" else ""),
+                    Toast.LENGTH_LONG
+                ).show()
+                state.changed()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, e.message ?: "Không đọc được file Excel", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = { Prefs.setCreator(ctx, name); onDismiss() },
         title = { Text("Cài đặt") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Tên người tạo bill") },
@@ -80,6 +98,21 @@ fun SettingsDialog(state: AppState, onDismiss: () -> Unit) {
                 }
                 OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Nhập dữ liệu / đơn hàng từ file")
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Excel", fontWeight = FontWeight.Bold)
+                Text(
+                    "Xuất: danh mục hàng hoá, lịch sử bill, tổng hợp bill. Nhập: danh mục hàng hoá " +
+                        "(cột Hàng hóa, Đơn giá; tuỳ chọn Danh mục, Đơn vị) — trùng tên thì cập nhật giá.",
+                    fontSize = 13.sp, color = Color.Gray,
+                )
+                Button(onClick = {
+                    try { ExcelExport.export(ctx) } catch (e: Exception) {
+                        Toast.makeText(ctx, "Lỗi xuất Excel: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text("📊 Xuất Excel") }
+                OutlinedButton(onClick = { excelPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("📄 Nhập danh mục từ Excel")
                 }
             }
         },
