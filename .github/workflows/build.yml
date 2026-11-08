@@ -2,7 +2,11 @@ name: Build APK
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -18,7 +22,29 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/*.apk MuaNL.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: MuaNL-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: MuaNL.apk
+
+      # Lưu APK mới nhất vào nhánh "apk" của repo
+      - name: Publish to apk branch
+        run: |
+          mkdir out && cp MuaNL.apk out/ && cd out
+          git init -q -b apk
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add MuaNL.apk
+          git commit -qm "APK build ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
+
+      # Bản phát hành "latest" để tải thẳng trên điện thoại
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest MuaNL.apk --title "Mua NL – bản mới nhất" \
+            --notes "Tải file MuaNL.apk về điện thoại Android rồi mở để cài."
