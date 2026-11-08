@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 
 val Green = Color(0xFF2E7D32)
 
@@ -81,6 +82,7 @@ fun App() {
     val state = remember { AppState(Db.get(ctx)) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
+    var needName by remember { mutableStateOf(Prefs.creator(ctx).isBlank()) }
     val current = Tab.entries[tab]
 
     Scaffold(
@@ -134,4 +136,33 @@ fun App() {
         }
     }
     if (showSettings) SettingsDialog(state, onDismiss = { showSettings = false })
+    if (needName) FirstRunDialog { name -> Prefs.setCreator(ctx, name); needName = false }
+}
+
+/** Hỏi tên người tạo bill lần đầu mở app — bắt buộc, không bỏ qua được. */
+@Composable
+private fun FirstRunDialog(onDone: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false, dismissOnClickOutside = false
+        ),
+        title = { Text("Chào mừng đến Mua NL") },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                Text("Nhập tên của bạn. Tên này sẽ in trên mọi bill tạo từ máy này (đổi lại được trong ⚙ Cài đặt).")
+                androidx.compose.foundation.layout.Spacer(Modifier.padding(6.dp))
+                androidx.compose.material3.OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Tên người tạo bill") }, singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(enabled = name.isNotBlank(), onClick = { onDone(name.trim()) }) {
+                Text("Bắt đầu")
+            }
+        },
+    )
 }

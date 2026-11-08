@@ -86,6 +86,23 @@ fun ManageScreen(state: AppState) {
     var newPhoto by remember { mutableStateOf<ByteArray?>(null) }    // ảnh chụp nhanh cho hàng mới
     var viewing by remember { mutableStateOf<ImageBitmap?>(null) }
     val camUri = remember { Photos.newCameraUri(ctx) }
+    val excelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                val rows = ExcelImport.read(ctx, uri)
+                val r = state.db.importCatalog(rows)
+                Toast.makeText(
+                    ctx,
+                    "Đã nhập ${rows.size} dòng: thêm ${r.added}, cập nhật giá ${r.updated}" +
+                        (if (r.newCategories > 0) ", tạo ${r.newCategories} danh mục" else ""),
+                    Toast.LENGTH_LONG
+                ).show()
+                state.changed()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, e.message ?: "Không đọc được file Excel", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     val quickCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         if (ok) {
             val bytes = Photos.load(ctx, camUri)
@@ -103,13 +120,15 @@ fun ManageScreen(state: AppState) {
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${categories.size} danh mục · ${items.size} nguyên liệu",
-                        color = Color.Gray, modifier = Modifier.weight(1f))
-                    OutlinedButton(
-                        enabled = emptyCount > 0,
-                        onClick = { confirm = Confirm.CleanEmpty(emptyCount) }
-                    ) { Text(if (emptyCount > 0) "Xoá $emptyCount DM trống" else "Không có DM trống") }
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text("${categories.size} danh mục · ${items.size} mặt hàng", color = Color.Gray)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { excelPicker.launch(arrayOf("*/*")) }) { Text("📄 Nhập từ Excel") }
+                        OutlinedButton(
+                            enabled = emptyCount > 0,
+                            onClick = { confirm = Confirm.CleanEmpty(emptyCount) }
+                        ) { Text(if (emptyCount > 0) "Xoá $emptyCount DM trống" else "Không có DM trống") }
+                    }
                 }
             }
             if (categories.isEmpty()) item { EmptyHint("Chưa có danh mục. Bấm \"Thêm danh mục\" để bắt đầu.") }

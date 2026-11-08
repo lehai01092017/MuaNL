@@ -47,7 +47,7 @@ class Db private constructor(ctx: Context) :
 
     companion object {
         const val DB_NAME = "nguyenlieu.db"
-        const val DB_VERSION = 3
+        const val DB_VERSION = 4
         @Volatile private var instance: Db? = null
         fun get(ctx: Context): Db =
             instance ?: synchronized(this) { instance ?: Db(ctx).also { instance = it } }
@@ -109,30 +109,62 @@ class Db private constructor(ctx: Context) :
             db.execSQL("ALTER TABLE items ADD COLUMN photo BLOB")
             db.execSQL("ALTER TABLE items ADD COLUMN photo_ver INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 4) replaceOldSamples(db)
+    }
+
+    /**
+     * Bản 4: xoá danh mục & hàng mẫu cũ (Rau củ, Thịt cá, Gia vị) rồi nạp danh mục đồ uống.
+     * Chỉ xoá đúng các món mẫu; danh mục cũ còn hàng do người dùng tự thêm thì giữ lại.
+     * Lịch sử bill không ảnh hưởng vì bill lưu bản chụp tên/giá.
+     */
+    private fun replaceOldSamples(db: SQLiteDatabase) {
+        val oldItems = mapOf(
+            "Rau củ" to listOf("Cà chua", "Hành lá", "Khoai tây", "Rau muống"),
+            "Thịt cá" to listOf("Thịt ba chỉ", "Ức gà", "Cá basa"),
+            "Gia vị" to listOf("Nước mắm", "Đường", "Muối"),
+        )
+        for ((cat, names) in oldItems) {
+            val cid = db.rawQuery("SELECT id FROM categories WHERE name=? COLLATE NOCASE", arrayOf(cat))
+                .use { if (it.moveToFirst()) it.getLong(0) else null } ?: continue
+            for (n in names) db.delete("items", "category_id=? AND name=?", arrayOf(cid.toString(), n))
+            db.delete("categories", "id=? AND id NOT IN (SELECT category_id FROM items)", arrayOf(cid.toString()))
+        }
+        seed(db)
     }
 
     /** Dữ liệu mẫu cho lần chạy đầu tiên. */
     private fun seed(db: SQLiteDatabase) {
         val sample = linkedMapOf(
-            "Rau củ" to listOf(
-                Triple("Cà chua", "kg", 25000L), Triple("Hành lá", "bó", 5000L),
-                Triple("Khoai tây", "kg", 30000L), Triple("Rau muống", "bó", 10000L),
+            "Cà phê & Trà" to listOf(
+                Triple("Cafe bột", "kg", 369000L), Triple("Trà đen phúc long", "Gói", 125000L),
+                Triple("Trà lài VINSAF", "Kg", 240000L),
             ),
-            "Thịt cá" to listOf(
-                Triple("Thịt ba chỉ", "kg", 160000L), Triple("Ức gà", "kg", 90000L),
-                Triple("Cá basa", "kg", 70000L),
+            "Siro" to listOf(
+                Triple("Siro chanh xanh TE 2.5Kg", "Chai", 200000L), Triple("Siro đào berrino", "Chai", 160000L),
+                Triple("Siro dâu tây berrino", "Chai", 85000L), Triple("Siro Việt quất berrino", "Chai", 115000L),
+                Triple("Siro Xoài berrino", "Chai", 100000L), Triple("Siro Vải berrino", "Chai", 140000L),
+                Triple("Siro đường đen Syrup 2.5kg", "Chai", 130000L),
             ),
-            "Gia vị" to listOf(
-                Triple("Nước mắm", "chai", 45000L), Triple("Đường", "kg", 25000L),
-                Triple("Muối", "gói", 8000L),
+            "Sữa & Kem" to listOf(
+                Triple("Bột kem trứng cô gái Xiaka", "Gói", 165000L), Triple("Rich base", "Hộp", 55000L),
+                Triple("Rich lùn", "Hộp", 32000L), Triple("Sữa đặc ngôi sao xanh lá", "Hộp", 65000L),
+                Triple("Sữa tươi Mlekovita", "Hộp", 35000L),
+            ),
+            "Topping" to listOf(
+                Triple("Nha đam 3Q", "Gói", 50000L), Triple("Trân châu Kun han", "Gói", 90000L),
+                Triple("Xí muội không hạt", "200g", 30000L), Triple("Vụn dừa", "500g", 70000L),
             ),
         )
-        var sort = 0
+        var sort = db.rawQuery("SELECT COALESCE(MAX(sort),0)+1 FROM categories", null)
+            .use { if (it.moveToFirst()) it.getInt(0) else 0 }
         for ((cat, items) in sample) {
-            val cid = db.insert("categories", null, ContentValues().apply {
-                put("name", cat); put("sort", sort++)
-            })
+            val cid = db.rawQuery("SELECT id FROM categories WHERE name=? COLLATE NOCASE", arrayOf(cat))
+                .use { if (it.moveToFirst()) it.getLong(0) else null }
+                ?: db.insert("categories", null, ContentValues().apply { put("name", cat); put("sort", sort++) })
             for ((n, u, p) in items) {
+                val exists = db.rawQuery("SELECT 1 FROM items WHERE name=? COLLATE NOCASE", arrayOf(n))
+                    .use { it.moveToFirst() }
+                if (exists) continue
                 db.insert("items", null, ContentValues().apply {
                     put("category_id", cid); put("name", n); put("unit", u); put("price", p)
                 })
