@@ -134,6 +134,7 @@ class Db private constructor(ctx: Context) :
                 put("name", name); put("unit", unit); put("price", price)
             }, "name=? COLLATE NOCASE", arrayOf(old))
         }
+    }
 
     /**
      * Bản 4: xoá danh mục & hàng mẫu cũ (Rau củ, Thịt cá, Gia vị) rồi nạp danh mục đồ uống.
