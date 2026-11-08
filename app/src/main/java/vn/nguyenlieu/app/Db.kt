@@ -47,11 +47,13 @@ class Db private constructor(ctx: Context) :
 
     companion object {
         const val DB_NAME = "nguyenlieu.db"
-        const val DB_VERSION = 6
+        const val DB_VERSION = 7
         @Volatile private var instance: Db? = null
         fun get(ctx: Context): Db =
             instance ?: synchronized(this) { instance ?: Db(ctx).also { instance = it } }
     }
+
+    private val appCtx: Context = ctx.applicationContext
 
     init {
         // Giữ toàn bộ dữ liệu trong 1 file để sao lưu/chép sang máy khác an toàn
@@ -101,6 +103,7 @@ class Db private constructor(ctx: Context) :
         db.execSQL("CREATE INDEX idx_bill_items_bill ON bill_items(bill_id)")
         db.execSQL("CREATE INDEX idx_bills_time ON bills(created_at)")
         seed(db)
+        seedPhotos(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -112,6 +115,24 @@ class Db private constructor(ctx: Context) :
         if (oldVersion < 4) replaceOldSamples(db)
         if (oldVersion < 5) renameCatalog(db)
         if (oldVersion < 6) { renameCatalog(db); seed(db) } // cập nhật giá + đơn vị theo bảng giá mới
+        if (oldVersion < 7) seedPhotos(db)
+    }
+
+    /** Gắn ảnh có sẵn trong app (assets/catalog) cho các hàng hoá cùng tên mà chưa có ảnh. */
+    private fun seedPhotos(db: SQLiteDatabase) {
+        try {
+            val index = org.json.JSONObject(
+                appCtx.assets.open("catalog/index.json").use { it.readBytes().toString(Charsets.UTF_8) }
+            )
+            val now = System.currentTimeMillis()
+            for (file in index.keys()) {
+                val name = index.getString(file)
+                val bytes = appCtx.assets.open("catalog/$file").use { it.readBytes() }
+                db.update("items", ContentValues().apply { put("photo", bytes); put("photo_ver", now) },
+                    "name=? COLLATE NOCASE AND photo IS NULL", arrayOf(name))
+            }
+        } catch (_: Exception) {
+        }
     }
 
     /** Bản 5: cập nhật tên/đơn vị/giá hàng hoá theo bảng giá mới (8/11/2026). */
