@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -77,8 +78,9 @@ fun HistoryScreen(state: AppState) {
 fun BillDialog(state: AppState, billId: Long, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val bill = remember(billId, state.version) { state.db.bill(billId) } ?: return
-    val lines = remember(billId) { state.db.billLines(billId) }
+    val lines = remember(billId, state.version) { state.db.billLines(billId) }
     var askDelete by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -106,7 +108,11 @@ fun BillDialog(state: AppState, billId: Long, onDismiss: () -> Unit) {
                     Text("TỔNG CỘNG", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Text(Fmt.money(bill.total), fontWeight = FontWeight.Bold, color = Green)
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = { editing = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Edit, null); Spacer(Modifier.width(6.dp)); Text("Sửa bill")
+                }
+                Spacer(Modifier.height(4.dp))
                 Button(
                     onClick = { BillShare.shareImageAndFile(ctx, bill, lines, BillShare.ZALO) },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0068FF)),
@@ -137,6 +143,8 @@ fun BillDialog(state: AppState, billId: Long, onDismiss: () -> Unit) {
             }
         },
     )
+
+    if (editing) BillEditDialog(state, bill, lines) { editing = false }
 
     if (askDelete) {
         AlertDialog(

@@ -12,15 +12,30 @@ android {
         applicationId = "vn.nguyenlieu.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Mỗi lần build trên GitHub tăng số phiên bản -> Android nhận là bản cập nhật
+        val run = (System.getenv("GITHUB_RUN_NUMBER") ?: "0").toInt()
+        versionCode = 100 + run
+        versionName = "1.$run"
+    }
+
+    // Khoá ký CỐ ĐỊNH: mọi bản build ký cùng một khoá -> cài đè được, KHÔNG mất dữ liệu.
+    // Đừng xoá hay thay file keystore/muanl.jks, nếu không sẽ phải gỡ app để cài lại.
+    signingConfigs {
+        create("muanl") {
+            storeFile = rootProject.file("keystore/muanl.jks")
+            storePassword = "MuaNL2026"
+            keyAlias = "muanl"
+            keyPassword = "MuaNL2026"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Ký bằng khoá debug để file APK release cài được ngay (dùng cá nhân).
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("muanl")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("muanl")
         }
     }
     compileOptions {

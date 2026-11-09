@@ -71,7 +71,12 @@ fun SettingsDialog(state: AppState, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = { Prefs.setCreator(ctx, name); onDismiss() },
-        title = { Text("Cài đặt") },
+        title = {
+            val ver = remember {
+                try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "" }
+            }
+            Text("Cài đặt  ·  phiên bản $ver")
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
