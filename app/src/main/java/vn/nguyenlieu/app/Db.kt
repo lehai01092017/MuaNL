@@ -47,7 +47,7 @@ class Db private constructor(ctx: Context) :
 
     companion object {
         const val DB_NAME = "nguyenlieu.db"
-        const val DB_VERSION = 7
+        const val DB_VERSION = 8
         @Volatile private var instance: Db? = null
         fun get(ctx: Context): Db =
             instance ?: synchronized(this) { instance ?: Db(ctx).also { instance = it } }
@@ -102,8 +102,7 @@ class Db private constructor(ctx: Context) :
         db.execSQL("CREATE INDEX idx_items_cat ON items(category_id)")
         db.execSQL("CREATE INDEX idx_bill_items_bill ON bill_items(bill_id)")
         db.execSQL("CREATE INDEX idx_bills_time ON bills(created_at)")
-        seed(db)
-        seedPhotos(db)
+        if (!syncCatalog(db)) seed(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -115,24 +114,54 @@ class Db private constructor(ctx: Context) :
         if (oldVersion < 4) replaceOldSamples(db)
         if (oldVersion < 5) renameCatalog(db)
         if (oldVersion < 6) { renameCatalog(db); seed(db) } // cập nhật giá + đơn vị theo bảng giá mới
-        if (oldVersion < 7) seedPhotos(db)
+        if (oldVersion < 8) syncCatalog(db) // danh mục theo file Excel 10/11/2026 (Trà Sữa, Đường 1kg, giá mới)
     }
 
-    /** Gắn ảnh có sẵn trong app (assets/catalog) cho các hàng hoá cùng tên mà chưa có ảnh. */
-    private fun seedPhotos(db: SQLiteDatabase) {
-        try {
-            val index = org.json.JSONObject(
-                appCtx.assets.open("catalog/index.json").use { it.readBytes().toString(Charsets.UTF_8) }
-            )
-            val now = System.currentTimeMillis()
-            for (file in index.keys()) {
-                val name = index.getString(file)
-                val bytes = appCtx.assets.open("catalog/$file").use { it.readBytes() }
-                db.update("items", ContentValues().apply { put("photo", bytes); put("photo_ver", now) },
-                    "name=? COLLATE NOCASE AND photo IS NULL", arrayOf(name))
-            }
-        } catch (_: Exception) {
+    /**
+     * Đồng bộ danh mục kèm app (assets/catalog/index.json, tạo từ file Excel bằng tools/build_catalog.py):
+     * tạo danh mục thiếu, thêm hàng mới, cập nhật đơn vị / giá / danh mục của hàng cùng tên,
+     * gắn ảnh cho hàng chưa có ảnh (không đè ảnh anh tự chụp). Trả về false nếu không đọc được.
+     */
+    private fun syncCatalog(db: SQLiteDatabase): Boolean = try {
+        val root = org.json.JSONObject(
+            appCtx.assets.open("catalog/index.json").use { it.readBytes().toString(Charsets.UTF_8) }
+        )
+        val arr = root.getJSONArray("items")
+        val now = System.currentTimeMillis()
+        val catIds = HashMap<String, Long>()
+        fun catId(name: String): Long = catIds.getOrPut(name.lowercase()) {
+            db.rawQuery("SELECT id FROM categories WHERE name=? COLLATE NOCASE", arrayOf(name))
+                .use { if (it.moveToFirst()) it.getLong(0) else null }
+                ?: run {
+                    val sort = db.rawQuery("SELECT COALESCE(MAX(sort),0)+1 FROM categories", null)
+                        .use { if (it.moveToFirst()) it.getInt(0) else 0 }
+                    db.insert("categories", null, ContentValues().apply { put("name", name); put("sort", sort) })
+                }
         }
+        for (i in 0 until arr.length()) {
+            val e = arr.getJSONObject(i)
+            val name = e.getString("name")
+            val cid = catId(e.optString("category").ifBlank { "Chưa phân loại" })
+            val photoFile = e.optString("photo")
+            val photo = if (photoFile.isNotEmpty()) appCtx.assets.open("catalog/$photoFile").use { it.readBytes() } else null
+            val existing = db.rawQuery("SELECT id, photo IS NULL FROM items WHERE name=? COLLATE NOCASE", arrayOf(name))
+                .use { if (it.moveToFirst()) it.getLong(0) to (it.getInt(1) == 1) else null }
+            val v = ContentValues().apply {
+                put("name", name); put("unit", e.optString("unit")); put("price", e.optLong("price"))
+                put("category_id", cid)
+            }
+            if (existing == null) {
+                if (photo != null) { v.put("photo", photo); v.put("photo_ver", now) }
+                db.insert("items", null, v)
+            } else {
+                if (photo != null && existing.second) { v.put("photo", photo); v.put("photo_ver", now) }
+                db.update("items", v, "id=?", arrayOf(existing.first.toString()))
+            }
+        }
+        true
+    } catch (e: Exception) {
+        false
+
     }
 
     /** Bản 5: cập nhật tên/đơn vị/giá hàng hoá theo bảng giá mới (8/11/2026). */

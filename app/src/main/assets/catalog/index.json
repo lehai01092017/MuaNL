@@ -1,21 +1,145 @@
 {
- "01.jpg": "Cafe bột",
- "02.jpg": "Trà đen phúc long 500g",
- "03.jpg": "Trà lài VINSAF 1Kg",
- "04.jpg": "Siro chanh xanh TE 2.5Kg",
- "05.jpg": "Siro đào berrino",
- "06.jpg": "Siro dâu tây berrino",
- "07.jpg": "Siro Việt quất berrino",
- "08.jpg": "Siro Xoài berrino",
- "09.jpg": "Siro Vải berrino",
- "10.jpg": "Siro đường đen Tuấn Cường Phát 2.5kg",
- "11.jpg": "Bột kem trứng cô gái Xiaka",
- "12.jpg": "Rick base",
- "13.jpg": "Rick lùn",
- "14.jpg": "Sữa đặc ngôi sao xanh lá",
- "15.jpg": "Sữa tươi Mlekovita",
- "16.jpg": "Nha đam 3Q 1Kg",
- "17.jpg": "Trân châu Kun han 3Kg",
- "18.jpg": "Xí muội không hạt",
- "19.jpg": "Vụn dừa 500g"
+ "version": 2,
+ "items": [
+  {
+   "category": "Cà phê & Trà",
+   "name": "Cafe bột",
+   "unit": "kg",
+   "price": 369000,
+   "photo": "01.jpg"
+  },
+  {
+   "category": "Cà phê & Trà",
+   "name": "Trà đen phúc long 500g",
+   "unit": "Gói",
+   "price": 125000,
+   "photo": "02.jpg"
+  },
+  {
+   "category": "Trà Sữa",
+   "name": "Trà lài VINSAF 1Kg",
+   "unit": "Gói",
+   "price": 120000,
+   "photo": "03.jpg"
+  },
+  {
+   "category": "Trà Sữa",
+   "name": "Trân châu Kun han 3Kg",
+   "unit": "Gói",
+   "price": 80000,
+   "photo": "04.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro chanh xanh TE 2.5Kg",
+   "unit": "Chai",
+   "price": 200000,
+   "photo": "05.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro đào berrino",
+   "unit": "Chai",
+   "price": 160000,
+   "photo": "06.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro dâu tây berrino",
+   "unit": "Chai",
+   "price": 85000,
+   "photo": "07.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro Việt quất berrino",
+   "unit": "Chai",
+   "price": 115000,
+   "photo": "08.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro Xoài berrino",
+   "unit": "Chai",
+   "price": 100000,
+   "photo": "09.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro Vải berrino",
+   "unit": "Chai",
+   "price": 140000,
+   "photo": "10.jpg"
+  },
+  {
+   "category": "Siro",
+   "name": "Siro đường đen Tuấn Cường Phát 2.5kg",
+   "unit": "Chai",
+   "price": 130000,
+   "photo": "11.jpg"
+  },
+  {
+   "category": "Sữa & Kem",
+   "name": "Bột kem trứng cô gái Xiaka",
+   "unit": "Gói",
+   "price": 165000,
+   "photo": "12.jpg"
+  },
+  {
+   "category": "Sữa & Kem",
+   "name": "Rick base",
+   "unit": "Hộp",
+   "price": 55000,
+   "photo": "13.jpg"
+  },
+  {
+   "category": "Sữa & Kem",
+   "name": "Rick lùn",
+   "unit": "Hộp",
+   "price": 32000,
+   "photo": "14.jpg"
+  },
+  {
+   "category": "Sữa & Kem",
+   "name": "Sữa đặc ngôi sao xanh lá",
+   "unit": "Hộp",
+   "price": 65000,
+   "photo": "15.jpg"
+  },
+  {
+   "category": "Sữa & Kem",
+   "name": "Sữa tươi Mlekovita",
+   "unit": "Hộp",
+   "price": 35000,
+   "photo": "16.jpg"
+  },
+  {
+   "category": "Topping",
+   "name": "Nha đam 3Q 1Kg",
+   "unit": "Gói",
+   "price": 50000,
+   "photo": "17.jpg"
+  },
+  {
+   "category": "Topping",
+   "name": "Xí muội không hạt",
+   "unit": "200g",
+   "price": 30000,
+   "photo": "18.jpg"
+  },
+  {
+   "category": "Topping",
+   "name": "Vụn dừa 500g",
+   "unit": "Gói",
+   "price": 70000,
+   "photo": "19.jpg"
+  },
+  {
+   "category": "Sữa & Kem",
+   "name": "Đường 1kg",
+   "unit": "Gói",
+   "price": 24000,
+   "photo": "20.jpg"
+  }
+ ]
 }

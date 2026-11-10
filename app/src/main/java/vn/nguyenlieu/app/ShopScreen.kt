@@ -158,9 +158,13 @@ fun ShopScreen(state: AppState) {
     }
 
     if (showCheckout) {
-        CheckoutDialog(cartLines, total, Prefs.creator(ctx), onDismiss = { showCheckout = false }) { note, creator ->
+        BillEditor(
+            state, title = "Xác nhận bill", subtitle = "Sửa số lượng, giá, thêm/bớt món trước khi xuất",
+            initialLines = cartLines, initialNote = "", initialCreator = Prefs.creator(ctx),
+            saveLabel = "Lưu & chia sẻ", onCancel = { showCheckout = false },
+        ) { note, creator, lines ->
             Prefs.setCreator(ctx, creator)
-            val id = state.db.saveBill(note, creator, cartLines)
+            val id = state.db.saveBill(note, creator, lines)
             state.cart.clear()
             state.changed()
             showCheckout = false

@@ -80,11 +80,37 @@ private class EditLine(
     }
 }
 
+/** Sửa bill đã lưu. */
 @Composable
 fun BillEditDialog(state: AppState, bill: Bill, lines: List<BillLine>, onDone: () -> Unit) {
     val ctx = LocalContext.current
-    var note by remember { mutableStateOf(bill.note) }
-    var creator by remember { mutableStateOf(bill.creator) }
+    BillEditor(
+        state, title = "Sửa bill #${bill.id}", subtitle = Fmt.dateTime(bill.createdAt),
+        initialLines = lines, initialNote = bill.note, initialCreator = bill.creator,
+        saveLabel = "Lưu", onCancel = onDone,
+    ) { note, creator, newLines ->
+        state.db.updateBill(bill.id, note, creator, newLines)
+        Toast.makeText(ctx, "Đã lưu thay đổi bill #${bill.id}", Toast.LENGTH_SHORT).show()
+        state.changed(); onDone()
+    }
+}
+
+/** Màn sửa nội dung bill: dùng cho cả bước xác nhận trước khi xuất và sửa bill đã lưu. */
+@Composable
+fun BillEditor(
+    state: AppState,
+    title: String,
+    subtitle: String?,
+    initialLines: List<BillLine>,
+    initialNote: String,
+    initialCreator: String,
+    saveLabel: String,
+    onCancel: () -> Unit,
+    onSave: (note: String, creator: String, lines: List<BillLine>) -> Unit,
+) {
+    var note by remember { mutableStateOf(initialNote) }
+    var creator by remember { mutableStateOf(initialCreator) }
+    val lines = initialLines
     val edit = remember {
         mutableStateListOf<EditLine>().apply {
             lines.forEach { add(EditLine(it.itemName, it.categoryName, it.unit, Fmt.qty(it.qty), Fmt.number(it.price))) }
@@ -96,10 +122,10 @@ fun BillEditDialog(state: AppState, bill: Bill, lines: List<BillLine>, onDone: (
 
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("Sửa bill #${bill.id}") },
+        title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(Fmt.dateTime(bill.createdAt), color = Color.Gray, fontSize = 13.sp)
+                if (subtitle != null) Text(subtitle, color = Color.Gray, fontSize = 13.sp)
                 edit.forEachIndexed { i, l ->
                     HorizontalDivider(Modifier.padding(vertical = 6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -138,13 +164,11 @@ fun BillEditDialog(state: AppState, bill: Bill, lines: List<BillLine>, onDone: (
             }
         },
         confirmButton = {
-            Button(enabled = edit.isNotEmpty() && !invalid, onClick = {
-                state.db.updateBill(bill.id, note, creator, edit.mapNotNull { it.toLine() })
-                Toast.makeText(ctx, "Đã lưu thay đổi bill #${bill.id}", Toast.LENGTH_SHORT).show()
-                state.changed(); onDone()
-            }) { Text("Lưu") }
+            Button(enabled = edit.isNotEmpty() && !invalid && creator.isNotBlank(), onClick = {
+                onSave(note, creator, edit.mapNotNull { it.toLine() })
+            }) { Text(saveLabel) }
         },
-        dismissButton = { TextButton(onClick = onDone) { Text("Huỷ") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Huỷ") } },
     )
 
     if (picking) ItemPicker(state, onDismiss = { picking = false }) { item, catName ->
