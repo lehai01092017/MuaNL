@@ -17,11 +17,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Thử chạy script trên Windows (ping, arp, xuất Excel)
+      - name: Gắn số phiên bản
         shell: pwsh
         run: |
-          python QuetCamera.py --range 127.0.0.1-3 --user admin --password x --ports 135,445 --timeout 2 --out test_py.xlsx
-          if (!(Test-Path test_py.xlsx)) { throw "Không tạo được file Excel" }
+          $v = "1.$env:GITHUB_RUN_NUMBER"
+          (Get-Content QuetCamera.py -Raw -Encoding utf8) -replace 'APP_VERSION = "dev"', "APP_VERSION = `"$v`"" | Set-Content QuetCamera.py -Encoding utf8 -NoNewline
+          "VERSION=$v" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          python QuetCamera.py --version
+
+      - name: Thử trên Windows (ping, quét, xuất Excel, tự cập nhật)
+        shell: pwsh
+        run: |
+          python QuetCamera.py --ping 127.0.0.1-2 --out ping.xlsx
+          if (!(Test-Path ping.xlsx)) { throw "Ping không xuất được Excel" }
+          python QuetCamera.py --range 127.0.0.1-3 --cred admin:x --cred root:y --ports 135,445 --timeout 2 --out cam.xlsx
+          if (!(Test-Path cam.xlsx)) { throw "Quét không xuất được Excel" }
+          python tests\test_windows.py
 
       - name: Đóng gói exe
         shell: pwsh
@@ -29,27 +40,35 @@ jobs:
           pip install pyinstaller
           pyinstaller --onefile --windowed --name QuetCamera QuetCamera.py
 
-      - name: Thử exe chế độ dòng lệnh
+      - name: Thử exe
         shell: pwsh
         run: |
-          $p = Start-Process dist\QuetCamera.exe -ArgumentList '--range 127.0.0.1 --ports 135 --timeout 2 --out test_exe.xlsx' -PassThru -Wait
-          if (!(Test-Path test_exe.xlsx)) { throw "exe không xuất được Excel" }
-
-      - name: Thử mở giao diện exe
-        shell: pwsh
-        run: |
+          Start-Process dist\QuetCamera.exe -ArgumentList '--ping 127.0.0.1 --out exe_ping.xlsx' -Wait
+          if (!(Test-Path exe_ping.xlsx)) { throw "exe không chạy được chế độ dòng lệnh" }
           $p = Start-Process dist\QuetCamera.exe -PassThru
-          Start-Sleep -Seconds 8
+          Start-Sleep -Seconds 10
           if ($p.HasExited) { throw "Giao diện bị tắt ngay (mã $($p.ExitCode))" }
           Stop-Process -Id $p.Id -Force
           "Giao diện chạy OK"
 
-      - name: Lưu exe vào nhánh quet-camera-exe
+      - name: Đăng bản mới (nhánh quet-camera-exe + version.json cho tự cập nhật)
         shell: bash
         run: |
+          NOTES=$(git log -1 --format=%s)
           mkdir out && cp dist/QuetCamera.exe out/ && cp HUONG_DAN.txt out/ && cd out
           git init -q -b quet-camera-exe
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add . && git commit -qm "QuetCamera.exe ${GITHUB_SHA::7}"
+          git add . && git commit -qm "QuetCamera.exe $VERSION"
+          SHA=$(git rev-parse HEAD)
+          python - "$VERSION" "$SHA" "$NOTES" <<'PY'
+          import hashlib, json, os, sys
+          v, sha, notes = sys.argv[1:4]
+          b = open("QuetCamera.exe", "rb").read()
+          json.dump({"version": v, "notes": notes, "size": len(b), "sha256": hashlib.sha256(b).hexdigest(),
+                     "url": f"https://raw.githubusercontent.com/{os.environ['GITHUB_REPOSITORY']}/{sha}/QuetCamera.exe"},
+                    open("version.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          PY
+          cat version.json
+          git add version.json && git commit -qm "version.json $VERSION"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" quet-camera-exe

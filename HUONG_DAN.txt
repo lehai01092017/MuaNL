@@ -1,14 +1,14 @@
 CÔNG CỤ QUÉT CAMERA – LẤY IP, MAC, SERIAL (chuẩn ONVIF)
 =========================================================
 
-1. CÀI ĐẶT (một lần)
-   - Cần Python 3 (miễn phí): https://www.python.org/downloads/
-     Khi cài nhớ tick "Add python.exe to PATH".
-   - Không cần cài thêm thư viện nào.
+1. CHẠY TRÊN MÁY BẤT KỲ (Windows 10/11) – KHÔNG CẦN CÀI GÌ
+   - Chép file "QuetCamera.exe" sang máy cần dùng (USB, Zalo, mạng…), nhấp đúp để mở.
+   - Lần đầu Windows có thể hiện "Windows protected your PC" (do file chưa ký số):
+     bấm "More info" (Thông tin thêm) -> "Run anyway" (Vẫn chạy).
+   - Máy đã có Python thì cũng có thể chạy "Chay_QuetCamera.bat" (dùng file QuetCamera.py).
 
 2. SỬ DỤNG
    - Máy tính phải cắm cùng mạng với camera (cùng VLAN / định tuyến tới được).
-   - Nhấp đúp "Chay_QuetCamera.bat".
    - Nhập:
        Dải IP   : 192.168.1.1-254   hoặc 10.0.0.0/24   hoặc 192.168.1.10-192.168.2.50
                   (nhiều dải cách nhau bằng dấu phẩy)
