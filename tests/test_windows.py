@@ -27,3 +27,21 @@ print("--- nhật ký cập nhật ---"); print(open(log, encoding="mbcs", error
 assert open("target.bin").read() == "new", "không thay được file"
 assert os.path.exists("restarted.txt"), "không mở lại chương trình"
 print("Tự cập nhật: OK")
+
+# Mã hoá mật khẩu bằng DPAPI và lưu thiết lập (giao diện exe sẽ đọc lại ở bước sau)
+enc = Q.protect("admin:Abc@123\nroot pass")
+assert enc.startswith("dpapi:"), enc[:10]
+assert Q.unprotect(enc) == "admin:Abc@123\nroot pass"
+Q.save_settings({"cam_range": "127.0.0.1-5", "cam_creds": enc, "ping_loop": True, "tab": 1,
+                 "cam_history": ["127.0.0.1-5", "192.168.1.1-254"]})
+assert Q.load_settings()["cam_range"] == "127.0.0.1-5"
+print("DPAPI + lưu thiết lập: OK ->", Q.settings_path())
+
+# Ping liên tục 3 vòng thật
+m = Q.PingMonitor()
+for _ in range(3):
+    rows, off, on = m.round(["127.0.0.1", "192.0.2.123"], 500)
+r = {x["IP"]: x for x in rows}
+print(r["127.0.0.1"]["Gửi/Nhận"], r["127.0.0.1"]["TB (ms)"], r["192.0.2.123"]["Mất (%)"])
+assert r["127.0.0.1"]["Gửi/Nhận"] == "3/3" and r["192.0.2.123"]["Mất (%)"] == 100
+print("Ping liên tục: OK")

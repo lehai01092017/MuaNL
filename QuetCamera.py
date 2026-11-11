@@ -44,8 +44,11 @@ UPDATE_URL = os.environ.get(
 DEFAULT_PORTS = "80,8000,8080,8899,2020"
 CAM_COLUMNS = ["STT", "IP", "MAC", "Hãng", "Model", "Firmware", "Serial", "Hardware ID",
                "Cổng ONVIF", "Tài khoản", "Trạng thái"]
-PING_COLUMNS = ["STT", "IP", "Trạng thái", "Phản hồi (ms)", "TTL", "MAC", "Tên máy"]
-NUMERIC_COLS = {"STT", "Cổng ONVIF", "Phản hồi (ms)", "TTL"}
+PING_COLUMNS = ["STT", "IP", "Trạng thái", "Phản hồi (ms)", "TB (ms)", "Mất (%)", "Gửi/Nhận", "TTL", "MAC",
+                "Tên máy", "Đổi trạng thái"]
+NUMERIC_COLS = {"STT", "Cổng ONVIF", "Phản hồi (ms)", "TB (ms)", "Mất (%)", "TTL"}
+# Biểu tượng quả cầu 16x16 (PNG) trước mỗi IP
+GLOBE_PNG = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACq0lEQVR4XqWTO2hUQRSG/5m59+7du5vdZLOJ2UfQ+ExERESiQQsLRS1ECxPT2ghaKDZiJ3YiiNhEsLH20dhZW4tEiBgTEk1Mso/cvftIsnfvY2ZkVg2xEdEDUwzzfwfmP/8BttaoZFuv+buLKXX+pCGbj3clxT0icOV9T186fs2MaGchgl1SSlBmzLle+KZorz/Bs8Orm1rgZ4Of8Labk5dT6dSj3t5UplCuIvC9dn8BDbm+FGq1eqFSrtwqPT70/BdD8EIyjBGeuz11KZ5MvzSpD7fphtGoRpMxg6xWW4hZmqw1fBGLRTVXGNio26PLDw68UiwBJMne+ZRiYNOE0u5jQ11iabXJsmkL6U4T7z/bODLYg7eTRezOxfmH+XXKOa+EMhxcuT/kUIDIVktc37enP31+JMOHBrpYsxUiEdPR8kIEgUQsqkEIgYFckl08keFKqxjFUlx9p0cNdmGoPyr7+2Kk6YbwA45MtwVKVX+gO2EgojNUGx5yvVGyL2tKxShW69B5IqLT7bazRmrVkHqBRBhKLBTX4TQ8eAHH7NIa/FCg5DQBSOqFlChGsVqHclkITC/UAe5DSAKfC3z8Um1D6huTsxW4HsdiaQOligvJ9DajWLoSsEbAsXD8UF6OndopTg/nYEUYzo3kcXR/D5JxA5dO7mh7oswcPzMgRg7mpWIUS/H0SOD6/PXMSosU7Ka0TA2GzlByXAgh1ZDgrPltX1LJCIq2K+dKHtlo8deK1ZTCND9NTM8s3piZY93De5PcMjVWWw/Q02lC1wnUVJSh88t1PvV1gwnObcuiEzVI8ldB6koYsuy4Iha3NJcbaDj2aPHhjyBRlUIVS5WsWrk47ocoZPI5JaTfbI+0OCFLjqS9mawWcFKol4vjbVjFf4zw/16m3+sf1vk78d+KOQtvMmYAAAAASUVORK5CYII="
 
 
 # ---------------------------------------------------------------- dải IP, tài khoản
@@ -341,24 +344,125 @@ def scan(ips, ports, creds, timeout=4.0, workers=64, on_result=None, on_progress
     return results
 
 
-def ping_sweep(ips, timeout_ms=1000, resolve_names=False, workers=64, on_result=None, on_progress=None, stop=None):
-    def one(ip):
-        ok, ms, ttl = ping_detail(ip, timeout_ms)
-        row = {"IP": ip, "Trạng thái": "Online" if ok else "Offline", "_web": f"http://{ip}"}
-        if ok:
-            row["Phản hồi (ms)"] = ms if ms is not None else ""
-            row["TTL"] = ttl
-            if resolve_names:
-                row["Tên máy"] = hostname(ip)
-        return row
+class PingMonitor:
+    """Ping nhiều vòng, cộng dồn thống kê cho từng IP (dùng cho ping 1 lần và ping liên tục)."""
 
-    results = run_parallel(ips, one, workers, on_result, on_progress, stop)
-    arp = arp_table()
-    for r in results:
-        if r["Trạng thái"] == "Online" and r["IP"] in arp:
-            r["MAC"] = arp[r["IP"]]
-    results.sort(key=lambda r: ip_key(r["IP"]))
-    return results
+    def __init__(self, resolve_names=False):
+        self.state = {}
+        self.resolve_names = resolve_names
+
+    def round(self, ips, timeout_ms=1000, workers=64, on_progress=None, stop=None):
+        results = run_parallel(ips, lambda ip: (ip, ping_detail(ip, timeout_ms)), workers,
+                               None, on_progress, stop)
+        now = dt.datetime.now().strftime("%H:%M:%S %d/%m")
+        went_off, came_on = [], []
+        for ip, (ok, ms, ttl) in results:
+            s = self.state.setdefault(ip, {"IP": ip, "_web": f"http://{ip}", "_sent": 0, "_recv": 0,
+                                           "_sum": 0.0, "_n": 0, "_ever": False})
+            prev = s.get("Trạng thái")
+            s["_sent"] += 1
+            if ok:
+                s["_recv"] += 1
+                s["_ever"] = True
+                s["Trạng thái"] = "Online"
+                s["TTL"] = ttl
+                s["Phản hồi (ms)"] = ms if ms is not None else ""
+                if ms is not None:
+                    s["_sum"] += ms
+                    s["_n"] += 1
+            else:
+                s["Trạng thái"] = "Offline"
+                s["Phản hồi (ms)"] = ""
+            if prev and prev != s["Trạng thái"]:
+                s["Đổi trạng thái"] = f"{now} → {s['Trạng thái']}"
+                (came_on if ok else went_off).append(ip)
+            s["Gửi/Nhận"] = f"{s['_sent']}/{s['_recv']}"
+            s["Mất (%)"] = round(100 * (s["_sent"] - s["_recv"]) / s["_sent"])
+            s["TB (ms)"] = round(s["_sum"] / s["_n"], 1) if s["_n"] else ""
+        online = [s for s in self.state.values() if s.get("Trạng thái") == "Online"]
+        need_mac = [s for s in online if not s.get("MAC")]
+        if need_mac:
+            arp = arp_table()
+            for s in need_mac:
+                if s["IP"] in arp:
+                    s["MAC"] = arp[s["IP"]]
+        if self.resolve_names:
+            need = [s for s in online if "Tên máy" not in s]
+            with ThreadPoolExecutor(max_workers=32) as ex:
+                for s, name in zip(need, ex.map(lambda s: hostname(s["IP"]), need)):
+                    s["Tên máy"] = name
+        rows = sorted((dict(s) for s in self.state.values()), key=lambda r: ip_key(r["IP"]))
+        return rows, went_off, came_on
+
+
+def ping_sweep(ips, timeout_ms=1000, resolve_names=False, workers=64, on_progress=None, stop=None):
+    return PingMonitor(resolve_names).round(ips, timeout_ms, workers, on_progress, stop)[0]
+
+
+# ---------------------------------------------------------------- lưu thiết lập cho lần mở sau
+def settings_path():
+    base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "QuetCamera")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "settings.json")
+
+
+def load_settings():
+    try:
+        with open(settings_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_settings(data):
+    try:
+        with open(settings_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
+if IS_WIN:
+    import ctypes
+
+    class _Blob(ctypes.Structure):
+        _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    def _dpapi(data, encrypt):
+        buf = ctypes.create_string_buffer(data, len(data))
+        inp = _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+        out = _Blob()
+        fn = ctypes.windll.crypt32.CryptProtectData if encrypt else ctypes.windll.crypt32.CryptUnprotectData
+        if not fn(ctypes.byref(inp), None, None, None, None, 0x01, ctypes.byref(out)):
+            raise OSError("DPAPI lỗi")
+        try:
+            return ctypes.string_at(out.pbData, out.cbData)
+        finally:
+            ctypes.windll.kernel32.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
+
+
+def protect(text):
+    """Mã hoá mật khẩu theo tài khoản Windows (DPAPI) trước khi lưu ra file."""
+    if IS_WIN:
+        try:
+            return "dpapi:" + base64.b64encode(_dpapi(text.encode("utf-8"), True)).decode()
+        except Exception:
+            pass
+    return "b64:" + base64.b64encode(text.encode("utf-8")).decode()
+
+
+def unprotect(s):
+    try:
+        kind, _, data = (s or "").partition(":")
+        raw = base64.b64decode(data)
+        if kind == "dpapi":
+            return _dpapi(raw, False).decode("utf-8")
+        if kind == "b64":
+            return raw.decode("utf-8")
+    except Exception:
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------- tự cập nhật
@@ -523,37 +627,74 @@ def run_gui():
     import tkinter as tk
     from tkinter import ttk, messagebox, filedialog
 
+    cfg = load_settings()
     root = tk.Tk()
     root.title(f"{APP_NAME} – IP, MAC, Serial (ONVIF)   ·   phiên bản {APP_VERSION}")
-    root.geometry("1280x700")
+    root.geometry(cfg.get("geometry") or "1280x720")
     try:
         root.tk.call("tk", "scaling", 1.3)
     except Exception:
         pass
+    globe = tk.PhotoImage(data=GLOBE_PNG)
     q = queue.Queue()
+    EXAMPLES = ("VD: 192.168.1.1-254   |   192.168.1.10-192.168.2.50   |   10.0.0.0/24   |   "
+                "192.168.1.25, 192.168.5.1-100  (nhiều dải cách nhau dấu phẩy)")
+
+    def remember(history, value):
+        h = [value] + [x for x in history if x != value]
+        return h[:12]
 
     class SortTable:
-        """Bảng kết quả: bấm tiêu đề để sắp xếp (bấm nhiều cột = sắp theo nhiều cột), nhấp đúp mở web."""
+        """Bảng kết quả. Cột IP có quả cầu: di chuột hiện bàn tay, bấm để mở web.
+        Bấm tiêu đề để sắp xếp (bấm nhiều cột = sắp theo nhiều cột); nhấp đúp dòng cũng mở web."""
 
-        def __init__(self, parent, columns, widths):
-            self.columns, self.rows, self.keys, self.shown = columns, [], [], []
+        def __init__(self, parent, columns, widths, row_tag=None):
+            self.columns = columns                                   # dùng khi xuất Excel
+            self.view = [c for c in columns if c not in ("STT", "IP")]
+            self.rows, self.keys, self.shown, self.filter, self.row_tag = [], [], [], None, row_tag
             frame = ttk.Frame(parent)
             frame.pack(fill="both", expand=True)
-            self.tv = ttk.Treeview(frame, columns=columns, show="headings")
-            for c, w in zip(columns, widths):
+            self.tv = ttk.Treeview(frame, columns=self.view, show="tree headings")
+            self.tv.heading("#0", text="IP", command=lambda: self.click_header("IP"))
+            self.tv.column("#0", width=widths.get("IP", 150), stretch=False, anchor="w")
+            for c in self.view:
                 self.tv.heading(c, text=c, command=lambda c=c: self.click_header(c))
-                self.tv.column(c, width=w, anchor="w")
+                self.tv.column(c, width=widths.get(c, 110), anchor="w")
+            self.tv.tag_configure("on", foreground="#1B7F2A")
+            self.tv.tag_configure("off", foreground="#C62828", background="#FDECEA")
             sb = ttk.Scrollbar(frame, orient="vertical", command=self.tv.yview)
             self.tv.configure(yscrollcommand=sb.set)
             sb.pack(side="right", fill="y")
             self.tv.pack(side="left", fill="both", expand=True)
-            self.tv.bind("<Double-1>", self.open_web)
-            self.filter = None
+            self.tv.bind("<Motion>", self.on_motion)
+            self.tv.bind("<Leave>", lambda e: self.tv.configure(cursor=""))
+            self.tv.bind("<ButtonRelease-1>", self.on_click)
+            self.tv.bind("<Double-1>", self.on_double)
 
+        # --- mở web ---
+        def _ip_cell(self, e):
+            return (self.tv.identify_row(e.y) and self.tv.identify_column(e.x) == "#0"
+                    and self.tv.identify_region(e.x, e.y) in ("tree", "cell"))
+
+        def on_motion(self, e):
+            self.tv.configure(cursor="hand2" if self._ip_cell(e) else "")
+
+        def open_row(self, item):
+            r = self.shown[int(item)]
+            webbrowser.open(r.get("_web") or f"http://{r['IP']}")
+
+        def on_click(self, e):
+            if self._ip_cell(e):
+                self.open_row(self.tv.identify_row(e.y))
+
+        def on_double(self, e):
+            item = self.tv.identify_row(e.y)
+            if item and not self._ip_cell(e) and self.tv.identify_region(e.x, e.y) == "cell":
+                self.open_row(item)
+
+        # --- sắp xếp ---
         def click_header(self, col):
-            if col == "STT":
-                self.keys = []
-            elif self.keys and self.keys[0][0] == col:
+            if self.keys and self.keys[0][0] == col:
                 self.keys[0] = (col, not self.keys[0][1])             # bấm lại cột chính: đảo chiều
             else:
                 self.keys = ([(col, False)] + [k for k in self.keys if k[0] != col])[:4]
@@ -571,26 +712,25 @@ def run_gui():
             self.rows.append(row)
 
         def visible(self):
-            rows = [r for r in self.rows if self.filter is None or self.filter(r)]
-            return sort_rows(rows, self.keys)
+            return sort_rows([r for r in self.rows if self.filter is None or self.filter(r)], self.keys)
 
         def render(self):
-            for c in self.columns:
-                mark = ""
+            def mark(c):
                 for i, (k, rev) in enumerate(self.keys):
                     if k == c:
-                        mark = f"  {'▼' if rev else '▲'}{i + 1 if len(self.keys) > 1 else ''}"
-                self.tv.heading(c, text=c + mark)
+                        return f"  {'▼' if rev else '▲'}{i + 1 if len(self.keys) > 1 else ''}"
+                return ""
+            self.tv.heading("#0", text="IP" + mark("IP"))
+            for c in self.view:
+                self.tv.heading(c, text=c + mark(c))
+            top = self.tv.yview()[0]
             self.tv.delete(*self.tv.get_children())
             self.shown = self.visible()
             for i, r in enumerate(self.shown):
-                self.tv.insert("", "end", iid=str(i), values=[i + 1] + [r.get(c, "") for c in self.columns[1:]])
-
-        def open_web(self, event):
-            item = self.tv.identify_row(event.y)
-            if item and self.tv.identify_region(event.x, event.y) == "cell":
-                r = self.shown[int(item)]
-                webbrowser.open(r.get("_web") or f"http://{r['IP']}")
+                tag = self.row_tag(r) if self.row_tag else ""
+                self.tv.insert("", "end", iid=str(i), text=" " + r.get("IP", ""), image=globe,
+                               values=[r.get(c, "") for c in self.view], tags=(tag,) if tag else ())
+            self.tv.yview_moveto(top)
 
         def export(self, title, prefix):
             if not self.rows:
@@ -607,8 +747,17 @@ def run_gui():
                 return path
             return None
 
+    # ===================== THANH TRÊN: TÊN, PHIÊN BẢN, CẬP NHẬT, GIỚI THIỆU =====================
     header = ttk.Frame(root)
     header.pack(fill="x", padx=8, pady=(8, 0))
+    v_upd = tk.StringVar(value=f"Phiên bản {APP_VERSION}")
+    b_about = ttk.Button(header, text="ⓘ Giới thiệu")
+    b_about.pack(side="right", padx=(4, 0))
+    b_upd = ttk.Button(header, text="⟳ Kiểm tra cập nhật")
+    b_upd.pack(side="right")
+    ttk.Label(header, textvariable=v_upd, foreground="#555").pack(side="right", padx=(0, 10))
+    ttk.Label(header, text=APP_NAME.upper() + " – IP, MAC, Serial camera & Ping dải IP",
+              font=("Segoe UI", 11, "bold")).pack(side="left")
     nb = ttk.Notebook(root)
     nb.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
@@ -617,18 +766,21 @@ def run_gui():
     nb.add(t1, text="  Quét camera (ONVIF)  ")
     top = ttk.Frame(t1)
     top.pack(fill="x")
-    v_range = tk.StringVar(value="192.168.1.1-254")
-    v_ports = tk.StringVar(value=DEFAULT_PORTS)
+    cam_hist = cfg.get("cam_history") or ["192.168.1.1-254"]
+    v_range = tk.StringVar(value=cfg.get("cam_range") or "192.168.1.1-254")
+    v_ports = tk.StringVar(value=cfg.get("cam_ports") or DEFAULT_PORTS)
     v_status = tk.StringVar(value="Nhập dải IP và các tài khoản camera rồi bấm Quét.")
     ttk.Label(top, text="Dải IP:").grid(row=0, column=0, sticky="w")
-    ttk.Entry(top, textvariable=v_range, width=44).grid(row=0, column=1, sticky="w", padx=4)
-    ttk.Label(top, text="Cổng ONVIF:").grid(row=1, column=0, sticky="w", pady=(6, 0))
-    ttk.Entry(top, textvariable=v_ports, width=44).grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
-    ttk.Label(top, text="VD: 192.168.1.1-254, 10.0.0.0/24, 192.168.1.10-192.168.2.50",
-              foreground="#666").grid(row=2, column=1, sticky="w", padx=4)
-    ttk.Label(top, text="Tài khoản (mỗi dòng 1 tài khoản)\nuser:pass  |  user pass  |  user/pass").grid(row=0, column=2, rowspan=3, sticky="ne", padx=(16, 4))
-    creds_box = tk.Text(top, width=30, height=4, font=("Consolas", 10))
-    creds_box.insert("1.0", "admin:\n")
+    cb_range = ttk.Combobox(top, textvariable=v_range, values=cam_hist, width=46)
+    cb_range.grid(row=0, column=1, sticky="w", padx=4)
+    ttk.Label(top, text=EXAMPLES, foreground="#666", wraplength=420, justify="left").grid(
+        row=1, column=1, sticky="w", padx=4)
+    ttk.Label(top, text="Cổng ONVIF:").grid(row=2, column=0, sticky="w", pady=(6, 0))
+    ttk.Entry(top, textvariable=v_ports, width=48).grid(row=2, column=1, sticky="w", padx=4, pady=(6, 0))
+    ttk.Label(top, text="Tài khoản (mỗi dòng 1 tài khoản)\nuser:pass  |  user pass  |  user/pass").grid(
+        row=0, column=2, rowspan=3, sticky="ne", padx=(16, 4))
+    creds_box = tk.Text(top, width=30, height=5, font=("Consolas", 10))
+    creds_box.insert("1.0", unprotect(cfg.get("cam_creds", "")) or "admin:\n")
     creds_box.grid(row=0, column=3, rowspan=3, sticky="nw")
     btns = ttk.Frame(top)
     btns.grid(row=0, column=4, rowspan=3, sticky="n", padx=(12, 0))
@@ -638,11 +790,12 @@ def run_gui():
     b_sort = ttk.Button(btns, text="↺ Sắp theo IP")
     for i, b in enumerate([b_scan, b_stop, b_save, b_sort]):
         b.grid(row=i // 2, column=i % 2, padx=3, pady=2, sticky="ew")
-    ttk.Label(t1, text="Bấm tiêu đề cột để sắp xếp – bấm thêm cột khác để sắp theo nhiều cột "
-                       "(vd bấm Model rồi bấm Hãng = theo Hãng, cùng hãng theo Model). "
-                       "Nhấp đúp một dòng để mở trang web của IP đó.",
+    ttk.Label(t1, text="Bấm vào IP (biểu tượng quả cầu) để mở trang web. Bấm tiêu đề cột để sắp xếp – "
+                       "bấm thêm cột khác để sắp theo nhiều cột (vd bấm Model rồi bấm Hãng = theo Hãng, cùng hãng theo Model).",
               foreground="#555").pack(fill="x", pady=(8, 4))
-    cam = SortTable(t1, CAM_COLUMNS, [45, 110, 140, 100, 140, 160, 180, 100, 80, 140, 230])
+    cam = SortTable(t1, CAM_COLUMNS, {"IP": 150, "MAC": 140, "Hãng": 100, "Model": 140, "Firmware": 160,
+                                      "Serial": 180, "Hardware ID": 100, "Cổng ONVIF": 80,
+                                      "Tài khoản": 140, "Trạng thái": 240})
     bar1 = ttk.Progressbar(t1, mode="determinate")
     bar1.pack(fill="x", pady=(6, 0))
     ttk.Label(t1, textvariable=v_status).pack(fill="x")
@@ -661,6 +814,8 @@ def run_gui():
             return
         if len(ips) > 4096 and not messagebox.askyesno("Dải IP lớn", f"Sẽ quét {len(ips)} địa chỉ. Tiếp tục?"):
             return
+        cb_range["values"] = remember(list(cb_range["values"]), v_range.get().strip())
+        persist()
         cam.set_rows([])
         b_scan["state"], b_stop["state"], b_save["state"] = "disabled", "normal", "disabled"
         stop = threading.Event()
@@ -696,29 +851,48 @@ def run_gui():
     nb.add(t2, text="  Ping dải IP  ")
     top2 = ttk.Frame(t2)
     top2.pack(fill="x")
-    v_prange = tk.StringVar(value="192.168.1.1-254")
-    v_ptimeout = tk.StringVar(value="1000")
-    v_online = tk.BooleanVar(value=True)
-    v_names = tk.BooleanVar(value=False)
+    ping_hist = cfg.get("ping_history") or ["192.168.1.1-254"]
+    v_prange = tk.StringVar(value=cfg.get("ping_range") or "192.168.1.1-254")
+    v_ptimeout = tk.StringVar(value=str(cfg.get("ping_timeout", 1000)))
+    v_online = tk.BooleanVar(value=cfg.get("ping_only_seen", True))
+    v_names = tk.BooleanVar(value=cfg.get("ping_names", False))
+    v_loop = tk.BooleanVar(value=cfg.get("ping_loop", False))
+    v_interval = tk.StringVar(value=str(cfg.get("ping_interval", 5)))
+    v_beep = tk.BooleanVar(value=cfg.get("ping_beep", True))
     v_pstatus = tk.StringVar(value="Nhập dải IP rồi bấm Ping.")
     ttk.Label(top2, text="Dải IP:").grid(row=0, column=0, sticky="w")
-    ttk.Entry(top2, textvariable=v_prange, width=44).grid(row=0, column=1, sticky="w", padx=4)
-    ttk.Label(top2, text="Chờ tối đa (ms):").grid(row=0, column=2, sticky="e", padx=(12, 4))
-    ttk.Entry(top2, textvariable=v_ptimeout, width=7).grid(row=0, column=3, sticky="w")
-    ttk.Checkbutton(top2, text="Chỉ hiện IP online", variable=v_online).grid(row=1, column=1, sticky="w", pady=(6, 0))
-    ttk.Checkbutton(top2, text="Tra tên máy (chậm hơn)", variable=v_names).grid(row=1, column=2, columnspan=2, sticky="w", pady=(6, 0))
+    cb_prange = ttk.Combobox(top2, textvariable=v_prange, values=ping_hist, width=46)
+    cb_prange.grid(row=0, column=1, sticky="w", padx=4)
+    ttk.Label(top2, text=EXAMPLES, foreground="#666", wraplength=420, justify="left").grid(
+        row=1, column=1, sticky="w", padx=4)
+    opt = ttk.Frame(top2)
+    opt.grid(row=0, column=2, rowspan=3, sticky="nw", padx=(16, 0))
+    ttk.Label(opt, text="Chờ tối đa (ms):").grid(row=0, column=0, sticky="w")
+    ttk.Entry(opt, textvariable=v_ptimeout, width=7).grid(row=0, column=1, sticky="w", padx=4)
+    ttk.Checkbutton(opt, text="Ping liên tục, mỗi", variable=v_loop).grid(row=1, column=0, sticky="w", pady=(4, 0))
+    f_int = ttk.Frame(opt)
+    f_int.grid(row=1, column=1, sticky="w", pady=(4, 0))
+    ttk.Entry(f_int, textvariable=v_interval, width=5).pack(side="left", padx=4)
+    ttk.Label(f_int, text="giây").pack(side="left")
+    ttk.Checkbutton(opt, text="Kêu bíp khi có IP mất kết nối", variable=v_beep).grid(row=2, column=0, columnspan=2, sticky="w")
+    ttk.Checkbutton(opt, text="Ẩn IP chưa từng online", variable=v_online).grid(row=0, column=2, sticky="w", padx=(16, 0))
+    ttk.Checkbutton(opt, text="Tra tên máy (chậm hơn)", variable=v_names).grid(row=1, column=2, sticky="w", padx=(16, 0), pady=(4, 0))
     btns2 = ttk.Frame(top2)
-    btns2.grid(row=0, column=4, rowspan=2, padx=(16, 0))
+    btns2.grid(row=0, column=3, rowspan=3, sticky="n", padx=(16, 0))
     p_go = ttk.Button(btns2, text="▶ Ping")
     p_stop = ttk.Button(btns2, text="■ Dừng", state="disabled")
     p_save = ttk.Button(btns2, text="💾 Xuất Excel", state="disabled")
     p_sort = ttk.Button(btns2, text="↺ Sắp theo IP")
     for i, b in enumerate([p_go, p_stop, p_save, p_sort]):
         b.grid(row=i // 2, column=i % 2, padx=3, pady=2, sticky="ew")
-    ttk.Label(t2, text="Bấm tiêu đề cột để sắp xếp (bấm nhiều cột = sắp nhiều cột). Nhấp đúp một dòng để mở web IP đó.",
+    ttk.Label(t2, text="Xanh = online, đỏ = mất kết nối. Bấm vào IP để mở web. Bấm tiêu đề cột để sắp xếp "
+                       "(vd bấm Trạng thái để đưa các IP mất kết nối lên đầu).",
               foreground="#555").pack(fill="x", pady=(8, 4))
-    pt = SortTable(t2, PING_COLUMNS, [45, 130, 90, 110, 60, 150, 300])
-    pt.filter = lambda r: (not v_online.get()) or r.get("Trạng thái") == "Online"
+    pt = SortTable(t2, PING_COLUMNS, {"IP": 150, "Trạng thái": 80, "Phản hồi (ms)": 100, "TB (ms)": 70,
+                                      "Mất (%)": 65, "Gửi/Nhận": 80, "TTL": 50, "MAC": 140,
+                                      "Tên máy": 200, "Đổi trạng thái": 170},
+                   row_tag=lambda r: "on" if r.get("Trạng thái") == "Online" else ("off" if r.get("_ever") else ""))
+    pt.filter = lambda r: (not v_online.get()) or r.get("_ever")
     v_online.trace_add("write", lambda *a: pt.render())
     bar2 = ttk.Progressbar(t2, mode="determinate")
     bar2.pack(fill="x", pady=(6, 0))
@@ -729,20 +903,30 @@ def run_gui():
         try:
             ips = parse_ranges(v_prange.get())
             tmo = int(v_ptimeout.get())
+            interval = max(1.0, float(v_interval.get().replace(",", ".")))
         except Exception as e:
             messagebox.showerror("Dữ liệu không hợp lệ", str(e))
             return
+        cb_prange["values"] = remember(list(cb_prange["values"]), v_prange.get().strip())
+        persist()
         pt.set_rows([])
         p_go["state"], p_stop["state"], p_save["state"] = "disabled", "normal", "disabled"
         stop = threading.Event()
         st2["stop"] = stop
-        names = v_names.get()
+        loop, names = v_loop.get(), v_names.get()
 
         def work():
             try:
-                res = ping_sweep(ips, tmo, names, on_result=lambda r: q.put(("ping_row", r)),
-                                 on_progress=lambda d, t: q.put(("ping_prog", (d, t))), stop=stop)
-                q.put(("ping_done", res))
+                mon = PingMonitor(names)
+                n = 0
+                while True:
+                    n += 1
+                    rows, off, on = mon.round(ips, tmo, on_progress=lambda d, t: q.put(("ping_prog", (d, t, n))),
+                                              stop=stop)
+                    q.put(("ping_round", (rows, n, off, on, loop)))
+                    if not loop or stop.is_set() or stop.wait(interval):
+                        break
+                q.put(("ping_done", None))
             except Exception as e:
                 q.put(("error", str(e)))
 
@@ -762,17 +946,30 @@ def run_gui():
     p_stop["command"] = ping_stop
     p_save["command"] = ping_save
     p_sort["command"] = pt.reset_sort
+    try:
+        nb.select(int(cfg.get("tab", 0)))
+    except Exception:
+        pass
 
-    # ===================== THANH TRÊN: PHIÊN BẢN, CẬP NHẬT, GIỚI THIỆU =====================
-    v_upd = tk.StringVar(value=f"Phiên bản {APP_VERSION}")
-    b_about = ttk.Button(header, text="ⓘ Giới thiệu")
-    b_about.pack(side="right", padx=(4, 0))
-    b_upd = ttk.Button(header, text="⟳ Kiểm tra cập nhật")
-    b_upd.pack(side="right")
-    ttk.Label(header, textvariable=v_upd, foreground="#555").pack(side="right", padx=(0, 10))
-    ttk.Label(header, text=APP_NAME.upper() + " – IP, MAC, Serial camera & Ping dải IP",
-              font=("Segoe UI", 11, "bold")).pack(side="left")
+    # ===================== LƯU THIẾT LẬP =====================
+    def persist():
+        save_settings({
+            "geometry": root.geometry(), "tab": nb.index(nb.select()),
+            "cam_range": v_range.get().strip(), "cam_history": list(cb_range["values"]),
+            "cam_ports": v_ports.get().strip(), "cam_creds": protect(creds_box.get("1.0", "end").strip()),
+            "ping_range": v_prange.get().strip(), "ping_history": list(cb_prange["values"]),
+            "ping_timeout": v_ptimeout.get().strip(), "ping_only_seen": v_online.get(),
+            "ping_names": v_names.get(), "ping_loop": v_loop.get(), "ping_interval": v_interval.get().strip(),
+            "ping_beep": v_beep.get(),
+        })
 
+    def on_close():
+        persist()
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_close)
+
+    # ===================== GIỚI THIỆU, CẬP NHẬT =====================
     def show_about():
         win = tk.Toplevel(root)
         win.title("Giới thiệu")
@@ -826,13 +1023,13 @@ def run_gui():
 
     # ===================== VÒNG XỬ LÝ SỰ KIỆN =====================
     def poll():
-        dirty = set()
+        dirty = False
         try:
             while True:
                 kind, a = q.get_nowait()
                 if kind == "cam_row":
                     cam.add_row(a)
-                    dirty.add("cam")
+                    dirty = True
                 elif kind == "cam_prog":
                     bar1["maximum"], bar1["value"] = a[1], a[0]
                     v_status.set(f"Đang quét {a[0]}/{a[1]} địa chỉ… tìm thấy {len(cam.rows)} thiết bị")
@@ -842,19 +1039,32 @@ def run_gui():
                     v_status.set(f"Xong: {len(a)} thiết bị trả lời, {ok} camera lấy được serial.")
                     b_scan["state"], b_stop["state"] = "normal", "disabled"
                     b_save["state"] = "normal" if a else "disabled"
-                elif kind == "ping_row":
-                    pt.add_row(a)
-                    dirty.add("ping")
                 elif kind == "ping_prog":
-                    bar2["maximum"], bar2["value"] = a[1], a[0]
-                    on = sum(1 for r in pt.rows if r.get("Trạng thái") == "Online")
-                    v_pstatus.set(f"Đang ping {a[0]}/{a[1]}… online {on}")
+                    d, t, n = a
+                    bar2["maximum"], bar2["value"] = t, d
+                    if n == 1:
+                        v_pstatus.set(f"Đang ping {d}/{t}…")
+                elif kind == "ping_round":
+                    rows, n, off, on, loop = a
+                    pt.set_rows(rows)
+                    p_save["state"] = "normal"
+                    online = sum(1 for r in rows if r.get("Trạng thái") == "Online")
+                    seen = sum(1 for r in rows if r.get("_ever"))
+                    lost = seen - online
+                    msg = f"{'Vòng ' + str(n) + ' – ' if loop else ''}{dt.datetime.now():%H:%M:%S}: " \
+                          f"online {online}/{len(rows)}"
+                    if loop:
+                        msg += f", đang mất kết nối {lost}"
+                        if off:
+                            msg += f"  ⚠ vừa mất: {', '.join(off[:5])}{'…' if len(off) > 5 else ''}"
+                            if v_beep.get():
+                                root.bell()
+                        if on:
+                            msg += f"  ✓ có lại: {', '.join(on[:5])}{'…' if len(on) > 5 else ''}"
+                    v_pstatus.set(msg)
                 elif kind == "ping_done":
-                    pt.set_rows(a)
-                    on = sum(1 for r in a if r.get("Trạng thái") == "Online")
-                    v_pstatus.set(f"Xong: {on}/{len(a)} địa chỉ online.")
                     p_go["state"], p_stop["state"] = "normal", "disabled"
-                    p_save["state"] = "normal" if a else "disabled"
+                    v_pstatus.set(v_pstatus.get() + "   (đã dừng)" if v_loop.get() else v_pstatus.get())
                 elif kind == "upd_info":
                     info, manual = a
                     if info:
@@ -877,6 +1087,7 @@ def run_gui():
                     g, t = a
                     v_upd.set(f"Đang tải bản mới… {g * 100 // t if t else 0}%")
                 elif kind == "upd_ready":
+                    persist()
                     schedule_replace(a, sys.executable, os.getpid())
                     root.destroy()
                     return
@@ -886,10 +1097,8 @@ def run_gui():
                     p_go["state"], p_stop["state"] = "normal", "disabled"
         except queue.Empty:
             pass
-        if "cam" in dirty:
+        if dirty:
             cam.render()
-        if "ping" in dirty:
-            pt.render()
         root.after(200, poll)
 
     root.after(200, poll)
