@@ -1,35 +1,49 @@
-CÔNG CỤ QUÉT CAMERA – LẤY IP, MAC, SERIAL (chuẩn ONVIF)
-=========================================================
+CÔNG CỤ QUÉT CAMERA – IP, MAC, SERIAL (ONVIF) + PING DẢI IP
+Tác giả: Hailm – hai.le@tnnsi.vn
+===========================================================
 
 1. CHẠY TRÊN MÁY BẤT KỲ (Windows 10/11) – KHÔNG CẦN CÀI GÌ
-   - Chép file "QuetCamera.exe" sang máy cần dùng (USB, Zalo, mạng…), nhấp đúp để mở.
-   - Lần đầu Windows có thể hiện "Windows protected your PC" (do file chưa ký số):
+   - Chép "QuetCamera.exe" sang máy cần dùng, nhấp đúp để mở.
+   - Lần đầu Windows có thể báo "Windows protected your PC" (file chưa ký số):
      bấm "More info" (Thông tin thêm) -> "Run anyway" (Vẫn chạy).
-   - Máy đã có Python thì cũng có thể chạy "Chay_QuetCamera.bat" (dùng file QuetCamera.py).
 
-2. SỬ DỤNG
-   - Máy tính phải cắm cùng mạng với camera (cùng VLAN / định tuyến tới được).
-   - Nhập:
-       Dải IP   : 192.168.1.1-254   hoặc 10.0.0.0/24   hoặc 192.168.1.10-192.168.2.50
-                  (nhiều dải cách nhau bằng dấu phẩy)
-       User     : tài khoản camera (thường là admin)
-       Mật khẩu : mật khẩu camera
-       Cổng ONVIF: để mặc định 80,8000,8080,8899,2020 (thêm cổng nếu camera dùng cổng khác)
-   - Bấm "Quét". Kết quả hiện dần trong bảng.
-   - Bấm "Xuất Excel" để lưu file danh sách (tự mở bằng Excel).
+2. TAB "QUÉT CAMERA (ONVIF)"
+   - Dải IP: 192.168.1.1-254 | 10.0.0.0/24 | 192.168.1.10-192.168.2.50 (nhiều dải cách nhau dấu phẩy)
+   - Tài khoản: MỖI DÒNG MỘT CẶP  user:mật khẩu  – công cụ thử lần lượt từng cặp, ví dụ:
+         admin:123456
+         admin:Abc@2026
+         root:pass
+     Cột "Tài khoản" cho biết camera đăng nhập được bằng user nào
+     (trùng user thì ghi "admin (mật khẩu #2)" = mật khẩu ở dòng admin thứ 2).
+   - Bấm "Quét" -> kết quả hiện dần; "Xuất Excel" để lưu.
 
-3. Ý NGHĨA CỘT "TRẠNG THÁI"
-   - OK                                : đã lấy được hãng, model, firmware, serial
-   - Sai user/mật khẩu (hoặc lệch giờ) : camera có ONVIF nhưng không đăng nhập được
-                                         -> kiểm tra mật khẩu; một số camera phải BẬT ONVIF
-                                            và tạo user ONVIF riêng trong trang web camera
-   - Có thiết bị, không thấy ONVIF     : địa chỉ có thiết bị (máy tính, switch, NVR, camera tắt ONVIF…)
+3. TAB "PING DẢI IP"
+   - Nhập dải IP, bấm "Ping": trạng thái Online/Offline, thời gian phản hồi (ms), TTL, MAC, tên máy.
+   - "Chỉ hiện IP online": bỏ tick để xem cả IP offline.
+   - "Tra tên máy": lấy tên máy tính/thiết bị (chậm hơn).
 
-4. LƯU Ý
-   - MAC lấy từ camera (ONVIF). Nếu camera không trả, lấy từ bảng ARP của máy tính –
-     chỉ có khi máy tính cùng lớp mạng với camera.
-   - Camera có mật khẩu khác nhau: quét nhiều lần theo từng nhóm mật khẩu.
-   - Quét 254 địa chỉ thường mất khoảng 10–30 giây.
+4. THAO TÁC TRÊN BẢNG (cả 2 tab)
+   - Mặc định sắp xếp theo IP.
+   - Bấm tiêu đề cột để sắp xếp; bấm lại cột đó để đảo chiều (▲ tăng / ▼ giảm).
+   - Sắp xếp nhiều cột: bấm lần lượt các cột, cột bấm SAU CÙNG được ưu tiên trước.
+       Ví dụ: bấm "Model" rồi bấm "Hãng"  ->  sắp theo Hãng, cùng hãng thì theo Model.
+       Số nhỏ cạnh mũi tên (▲1, ▲2) là thứ tự ưu tiên.
+   - "↺ Sắp theo IP" (hoặc bấm cột STT) để về mặc định.
+   - NHẤP ĐÚP một dòng để mở trang web của IP đó.
+   - Xuất Excel giữ đúng thứ tự đang sắp xếp.
 
-Dòng lệnh (không cần giao diện):
-   python QuetCamera.py --range 192.168.1.1-254 --user admin --password 123456 --out DanhSach.xlsx
+5. TỰ CẬP NHẬT
+   - Khi mở, công cụ tự kiểm tra bản mới (cần Internet). Có bản mới sẽ hỏi
+     "Cập nhật ngay?" -> bấm Yes: tự tải, tự thay file và mở lại.
+   - Bấm "⟳ Kiểm tra cập nhật" để kiểm tra thủ công. Số phiên bản hiện ở góc dưới và tiêu đề.
+   - Nếu lỗi, xem nhật ký: %TEMP%\quetcamera_update.log
+
+6. Ý NGHĨA CỘT "TRẠNG THÁI" (tab Quét camera)
+   - OK                                   : đã lấy được hãng, model, firmware, serial
+   - Sai cả N tài khoản (hoặc lệch giờ)   : có ONVIF nhưng không đăng nhập được
+       -> kiểm tra mật khẩu; một số camera phải BẬT ONVIF và tạo user ONVIF riêng
+   - Có thiết bị, không thấy ONVIF        : có thiết bị (PC, switch, NVR, camera tắt ONVIF…)
+
+Dòng lệnh:
+   QuetCamera.py --range 192.168.1.1-254 --cred admin:123 --cred admin:456 --out DanhSach.xlsx
+   QuetCamera.py --ping 192.168.1.1-254 --out Ping.xlsx
