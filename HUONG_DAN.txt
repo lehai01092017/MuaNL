@@ -1,0 +1,51 @@
+CÔNG CỤ QUÉT CAMERA – IP, MAC, SERIAL (ONVIF) + PING DẢI IP
+Tác giả: Hailm – hai.le@tnnsi.vn
+===========================================================
+
+1. CHẠY TRÊN MÁY BẤT KỲ (Windows 10/11) – KHÔNG CẦN CÀI GÌ
+   - Chép "QuetCamera.exe" sang máy cần dùng, nhấp đúp để mở.
+   - Lần đầu Windows có thể báo "Windows protected your PC" (file chưa ký số):
+     bấm "More info" (Thông tin thêm) -> "Run anyway" (Vẫn chạy).
+
+2. TAB "QUÉT CAMERA (ONVIF)"
+   - Dải IP: 192.168.1.1-254 | 10.0.0.0/24 | 192.168.1.10-192.168.2.50 (nhiều dải cách nhau dấu phẩy)
+   - Tài khoản: MỖI DÒNG MỘT TÀI KHOẢN, ngăn user và mật khẩu bằng ":" hoặc dấu cách hoặc "/":
+         admin:123456
+         admin Abc@2026
+         root/pass
+     (tách ở ký tự phân cách đầu tiên, nên mật khẩu có chứa ":", "/", dấu cách vẫn đúng).
+     Công cụ thử lần lượt từng tài khoản.
+     Cột "Tài khoản" cho biết camera đăng nhập được bằng user nào
+     (trùng user thì ghi "admin (mật khẩu #2)" = mật khẩu ở dòng admin thứ 2).
+   - Bấm "Quét" -> kết quả hiện dần; "Xuất Excel" để lưu.
+
+3. TAB "PING DẢI IP"
+   - Nhập dải IP, bấm "Ping": trạng thái Online/Offline, thời gian phản hồi (ms), TTL, MAC, tên máy.
+   - "Chỉ hiện IP online": bỏ tick để xem cả IP offline.
+   - "Tra tên máy": lấy tên máy tính/thiết bị (chậm hơn).
+
+4. THAO TÁC TRÊN BẢNG (cả 2 tab)
+   - Mặc định sắp xếp theo IP.
+   - Bấm tiêu đề cột để sắp xếp; bấm lại cột đó để đảo chiều (▲ tăng / ▼ giảm).
+   - Sắp xếp nhiều cột: bấm lần lượt các cột, cột bấm SAU CÙNG được ưu tiên trước.
+       Ví dụ: bấm "Model" rồi bấm "Hãng"  ->  sắp theo Hãng, cùng hãng thì theo Model.
+       Số nhỏ cạnh mũi tên (▲1, ▲2) là thứ tự ưu tiên.
+   - "↺ Sắp theo IP" (hoặc bấm cột STT) để về mặc định.
+   - NHẤP ĐÚP một dòng để mở trang web của IP đó.
+   - Xuất Excel giữ đúng thứ tự đang sắp xếp.
+
+5. TỰ CẬP NHẬT
+   - Khi mở, công cụ tự kiểm tra bản mới (cần Internet). Có bản mới sẽ hỏi
+     "Cập nhật ngay?" -> bấm Yes: tự tải, tự thay file và mở lại.
+   - Nút "⟳ Kiểm tra cập nhật" và "ⓘ Giới thiệu" ở góc TRÊN BÊN PHẢI, cạnh số phiên bản.
+   - Nếu lỗi, xem nhật ký: %TEMP%\quetcamera_update.log
+
+6. Ý NGHĨA CỘT "TRẠNG THÁI" (tab Quét camera)
+   - OK                                   : đã lấy được hãng, model, firmware, serial
+   - Sai cả N tài khoản (hoặc lệch giờ)   : có ONVIF nhưng không đăng nhập được
+       -> kiểm tra mật khẩu; một số camera phải BẬT ONVIF và tạo user ONVIF riêng
+   - Có thiết bị, không thấy ONVIF        : có thiết bị (PC, switch, NVR, camera tắt ONVIF…)
+
+Dòng lệnh:
+   QuetCamera.py --range 192.168.1.1-254 --cred admin:123 --cred admin:456 --out DanhSach.xlsx
+   QuetCamera.py --ping 192.168.1.1-254 --out Ping.xlsx
