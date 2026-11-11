@@ -472,6 +472,12 @@ def main():
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    # Cửa sổ dòng lệnh Windows (cp1252/cp1258) không in được tiếng Việt -> ép UTF-8
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser(description="Quét camera ONVIF: IP, MAC, serial")
     ap.add_argument("--range", help="Dải IP, vd 192.168.1.1-254")
     ap.add_argument("--user", default="admin")
