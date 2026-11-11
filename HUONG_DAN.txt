@@ -1,0 +1,35 @@
+CÔNG CỤ QUÉT CAMERA – LẤY IP, MAC, SERIAL (chuẩn ONVIF)
+=========================================================
+
+1. CÀI ĐẶT (một lần)
+   - Cần Python 3 (miễn phí): https://www.python.org/downloads/
+     Khi cài nhớ tick "Add python.exe to PATH".
+   - Không cần cài thêm thư viện nào.
+
+2. SỬ DỤNG
+   - Máy tính phải cắm cùng mạng với camera (cùng VLAN / định tuyến tới được).
+   - Nhấp đúp "Chay_QuetCamera.bat".
+   - Nhập:
+       Dải IP   : 192.168.1.1-254   hoặc 10.0.0.0/24   hoặc 192.168.1.10-192.168.2.50
+                  (nhiều dải cách nhau bằng dấu phẩy)
+       User     : tài khoản camera (thường là admin)
+       Mật khẩu : mật khẩu camera
+       Cổng ONVIF: để mặc định 80,8000,8080,8899,2020 (thêm cổng nếu camera dùng cổng khác)
+   - Bấm "Quét". Kết quả hiện dần trong bảng.
+   - Bấm "Xuất Excel" để lưu file danh sách (tự mở bằng Excel).
+
+3. Ý NGHĨA CỘT "TRẠNG THÁI"
+   - OK                                : đã lấy được hãng, model, firmware, serial
+   - Sai user/mật khẩu (hoặc lệch giờ) : camera có ONVIF nhưng không đăng nhập được
+                                         -> kiểm tra mật khẩu; một số camera phải BẬT ONVIF
+                                            và tạo user ONVIF riêng trong trang web camera
+   - Có thiết bị, không thấy ONVIF     : địa chỉ có thiết bị (máy tính, switch, NVR, camera tắt ONVIF…)
+
+4. LƯU Ý
+   - MAC lấy từ camera (ONVIF). Nếu camera không trả, lấy từ bảng ARP của máy tính –
+     chỉ có khi máy tính cùng lớp mạng với camera.
+   - Camera có mật khẩu khác nhau: quét nhiều lần theo từng nhóm mật khẩu.
+   - Quét 254 địa chỉ thường mất khoảng 10–30 giây.
+
+Dòng lệnh (không cần giao diện):
+   python QuetCamera.py --range 192.168.1.1-254 --user admin --password 123456 --out DanhSach.xlsx
