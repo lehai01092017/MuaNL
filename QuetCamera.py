@@ -84,15 +84,27 @@ def parse_ranges(text):
     return out
 
 
+def split_cred(line):
+    """'admin:123' | 'admin 123' | 'admin/123' -> ('admin', '123').
+    Tách ở ký tự phân cách ĐẦU TIÊN, nên mật khẩu chứa ':', ' ', '/' vẫn giữ nguyên."""
+    line = line.strip()
+    m = re.search(r"[:/\s]", line)
+    if not m:
+        return line, ""
+    user, rest = line[:m.start()], line[m.start():].lstrip()
+    if rest[:1] in (":", "/"):          # "admin : 123" -> bỏ dấu phân cách và khoảng trắng quanh nó
+        rest = rest[1:].lstrip()
+    return user, rest
+
+
 def parse_creds(text):
-    """Mỗi dòng 'user:mật khẩu' (tách ở dấu ':' đầu tiên). Trả về [(user, pass), ...]."""
+    """Mỗi dòng một tài khoản: user:mật khẩu, user mật khẩu hoặc user/mật khẩu."""
     creds = []
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        user, _, pw = line.partition(":")
-        creds.append((user.strip(), pw))
+        creds.append(split_cred(line))
     return creds
 
 
@@ -595,8 +607,10 @@ def run_gui():
                 return path
             return None
 
+    header = ttk.Frame(root)
+    header.pack(fill="x", padx=8, pady=(8, 0))
     nb = ttk.Notebook(root)
-    nb.pack(fill="both", expand=True, padx=8, pady=8)
+    nb.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
     # ===================== TAB 1: QUÉT CAMERA =====================
     t1 = ttk.Frame(nb, padding=8)
@@ -612,7 +626,7 @@ def run_gui():
     ttk.Entry(top, textvariable=v_ports, width=44).grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
     ttk.Label(top, text="VD: 192.168.1.1-254, 10.0.0.0/24, 192.168.1.10-192.168.2.50",
               foreground="#666").grid(row=2, column=1, sticky="w", padx=4)
-    ttk.Label(top, text="Tài khoản\n(mỗi dòng user:mật khẩu)").grid(row=0, column=2, rowspan=3, sticky="ne", padx=(16, 4))
+    ttk.Label(top, text="Tài khoản (mỗi dòng 1 tài khoản)\nuser:pass  |  user pass  |  user/pass").grid(row=0, column=2, rowspan=3, sticky="ne", padx=(16, 4))
     creds_box = tk.Text(top, width=30, height=4, font=("Consolas", 10))
     creds_box.insert("1.0", "admin:\n")
     creds_box.grid(row=0, column=3, rowspan=3, sticky="nw")
@@ -643,7 +657,7 @@ def run_gui():
             messagebox.showerror("Dữ liệu không hợp lệ", str(e))
             return
         if not creds:
-            messagebox.showerror("Thiếu tài khoản", "Nhập ít nhất một dòng user:mật khẩu.")
+            messagebox.showerror("Thiếu tài khoản", "Nhập ít nhất một tài khoản (user:pass, user pass hoặc user/pass).")
             return
         if len(ips) > 4096 and not messagebox.askyesno("Dải IP lớn", f"Sẽ quét {len(ips)} địa chỉ. Tiếp tục?"):
             return
@@ -749,15 +763,15 @@ def run_gui():
     p_save["command"] = ping_save
     p_sort["command"] = pt.reset_sort
 
-    # ===================== THANH DƯỚI: PHIÊN BẢN, CẬP NHẬT, GIỚI THIỆU =====================
-    bottom = ttk.Frame(root)
-    bottom.pack(fill="x", padx=8, pady=(0, 6))
+    # ===================== THANH TRÊN: PHIÊN BẢN, CẬP NHẬT, GIỚI THIỆU =====================
     v_upd = tk.StringVar(value=f"Phiên bản {APP_VERSION}")
-    ttk.Label(bottom, textvariable=v_upd, foreground="#555").pack(side="left")
-    b_about = ttk.Button(bottom, text="ⓘ Giới thiệu")
+    b_about = ttk.Button(header, text="ⓘ Giới thiệu")
     b_about.pack(side="right", padx=(4, 0))
-    b_upd = ttk.Button(bottom, text="⟳ Kiểm tra cập nhật")
+    b_upd = ttk.Button(header, text="⟳ Kiểm tra cập nhật")
     b_upd.pack(side="right")
+    ttk.Label(header, textvariable=v_upd, foreground="#555").pack(side="right", padx=(0, 10))
+    ttk.Label(header, text=APP_NAME.upper() + " – IP, MAC, Serial camera & Ping dải IP",
+              font=("Segoe UI", 11, "bold")).pack(side="left")
 
     def show_about():
         win = tk.Toplevel(root)
@@ -925,7 +939,7 @@ def main():
     if not a.range:
         run_gui()
         return
-    creds = [tuple(c.split(":", 1)) if ":" in c else (c, "") for c in a.cred]
+    creds = [split_cred(c) for c in a.cred]
     if a.user is not None:
         creds.insert(0, (a.user, a.password))
     ips = parse_ranges(a.range)

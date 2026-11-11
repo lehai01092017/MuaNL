@@ -9,10 +9,12 @@ Tác giả: Hailm – hai.le@tnnsi.vn
 
 2. TAB "QUÉT CAMERA (ONVIF)"
    - Dải IP: 192.168.1.1-254 | 10.0.0.0/24 | 192.168.1.10-192.168.2.50 (nhiều dải cách nhau dấu phẩy)
-   - Tài khoản: MỖI DÒNG MỘT CẶP  user:mật khẩu  – công cụ thử lần lượt từng cặp, ví dụ:
+   - Tài khoản: MỖI DÒNG MỘT TÀI KHOẢN, ngăn user và mật khẩu bằng ":" hoặc dấu cách hoặc "/":
          admin:123456
-         admin:Abc@2026
-         root:pass
+         admin Abc@2026
+         root/pass
+     (tách ở ký tự phân cách đầu tiên, nên mật khẩu có chứa ":", "/", dấu cách vẫn đúng).
+     Công cụ thử lần lượt từng tài khoản.
      Cột "Tài khoản" cho biết camera đăng nhập được bằng user nào
      (trùng user thì ghi "admin (mật khẩu #2)" = mật khẩu ở dòng admin thứ 2).
    - Bấm "Quét" -> kết quả hiện dần; "Xuất Excel" để lưu.
@@ -35,7 +37,7 @@ Tác giả: Hailm – hai.le@tnnsi.vn
 5. TỰ CẬP NHẬT
    - Khi mở, công cụ tự kiểm tra bản mới (cần Internet). Có bản mới sẽ hỏi
      "Cập nhật ngay?" -> bấm Yes: tự tải, tự thay file và mở lại.
-   - Bấm "⟳ Kiểm tra cập nhật" để kiểm tra thủ công. Số phiên bản hiện ở góc dưới và tiêu đề.
+   - Nút "⟳ Kiểm tra cập nhật" và "ⓘ Giới thiệu" ở góc TRÊN BÊN PHẢI, cạnh số phiên bản.
    - Nếu lỗi, xem nhật ký: %TEMP%\quetcamera_update.log
 
 6. Ý NGHĨA CỘT "TRẠNG THÁI" (tab Quét camera)
