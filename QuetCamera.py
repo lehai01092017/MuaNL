@@ -389,20 +389,39 @@ def download_update(info, dest_dir, on_progress=None):
 
 
 def schedule_replace(new_path, target_path, pid, restart_cmd=None):
-    """Windows: chạy 1 file .bat ẩn, đợi chương trình hiện tại thoát rồi thay file và mở lại."""
-    bat = os.path.join(tempfile.gettempdir(), f"quetcamera_update_{pid}.bat")
+    """Windows: chạy 1 file .bat ẩn, đợi chương trình hiện tại thoát rồi thay file và mở lại.
+    Ghi nhật ký vào %TEMP%\\quetcamera_update.log để tra lỗi."""
+    tmp = tempfile.gettempdir()
+    bat = os.path.join(tmp, f"quetcamera_update_{pid}.bat")
+    log = os.path.join(tmp, "quetcamera_update.log")
     restart = f'start "" {restart_cmd}' if restart_cmd else f'start "" "{target_path}"'
-    with open(bat, "w", encoding="mbcs" if IS_WIN else "utf-8") as f:
-        f.write("@echo off\r\n"
-                ":wait\r\n"
-                f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)\r\n'
-                "set n=0\r\n"
-                ":move\r\n"
-                f'move /y "{new_path}" "{target_path}" >nul 2>&1 || (set /a n+=1 & timeout /t 1 /nobreak >nul & if %n% lss 20 goto move)\r\n'
-                f"{restart}\r\n"
-                'del "%~f0"\r\n')
-    subprocess.Popen(["cmd", "/c", bat], creationflags=NO_WINDOW | 0x00000008,  # DETACHED_PROCESS
-                     close_fds=True)
+    lines = [
+        "@echo off",
+        "setlocal EnableDelayedExpansion",
+        f'echo [%date% %time%] bat bat dau, cho PID {pid} thoat > "{log}"',
+        ":wait",
+        f'tasklist /FI "PID eq {pid}" /NH 2>nul | find " {pid} " >nul',
+        "if not errorlevel 1 (ping -n 2 127.0.0.1 >nul & goto wait)",
+        f'echo [%time%] chuong trinh da thoat >> "{log}"',
+        "set n=0",
+        ":move",
+        f'move /y "{new_path}" "{target_path}" >> "{log}" 2>&1',
+        "if errorlevel 1 (",
+        "  set /a n+=1",
+        f'  echo [%time%] file dang bi khoa, thu lai !n! >> "{log}"',
+        "  if !n! lss 30 (ping -n 2 127.0.0.1 >nul & goto move)",
+        f'  echo [%time%] KHONG thay duoc file >> "{log}"',
+        "  goto end",
+        ")",
+        f'echo [%time%] da thay file, mo lai >> "{log}"',
+        restart,
+        ":end",
+        'del "%~f0"',
+    ]
+    with open(bat, "w", encoding="mbcs" if IS_WIN else "utf-8", newline="\r\n") as f:
+        f.write("\n".join(lines) + "\n")
+    # Cửa sổ ẩn (CREATE_NO_WINDOW) + nhóm tiến trình riêng để không bị tắt theo chương trình chính
+    subprocess.Popen(["cmd", "/c", bat], creationflags=NO_WINDOW | 0x00000200, close_fds=True)
     return bat
 
 

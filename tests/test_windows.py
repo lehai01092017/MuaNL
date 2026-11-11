@@ -22,6 +22,8 @@ for _ in range(20):
     time.sleep(1)
     if os.path.exists("restarted.txt"):
         break
+log = os.path.join(__import__("tempfile").gettempdir(), "quetcamera_update.log")
+print("--- nhật ký cập nhật ---"); print(open(log, encoding="mbcs", errors="replace").read() if os.path.exists(log) else "(không có)")
 assert open("target.bin").read() == "new", "không thay được file"
 assert os.path.exists("restarted.txt"), "không mở lại chương trình"
 print("Tự cập nhật: OK")
